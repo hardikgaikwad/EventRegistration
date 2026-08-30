@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+{% if user.is_authenticated %}
+    <p>Signed in as {{ user.email }} ({{ user.get_role_display }}).</p>
+{% else %}
+    <p><a href="{% url 'accounts:login' %}">Log in</a> to continue.</p>
+{% endif %}
+{% endblock %}
