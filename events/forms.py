@@ -1,5 +1,5 @@
 from django import forms
-from .models import Event
+from .models import Event, Session
 
 class EventForm(forms.ModelForm):
     class Meta:
@@ -20,3 +20,15 @@ class EventForm(forms.ModelForm):
         if start_date and end_date and end_date < start_date:
             raise forms.ValidationError("End date cannot be before the start date.")
         return cleaned_data
+    
+class SessionForm(forms.ModelForm):
+    class Meta:
+        model = Session
+        fields = ["title", "start_time", "duration_minutes", "location", "capacity"]
+        widgets = {
+            "title": forms.TextInput(attrs={"class": "form-control"}),
+            "start_time": forms.DateTimeInput(attrs={"class": "form-control", "type": "datetime-local"}),
+            "duration_minutes": forms.NumberInput(attrs={"class": "form-control", "min": 1}),
+            "location": forms.TextInput(attrs={"class": "form-control"}),
+            "capacity": forms.NumberInput(attrs={"class": "form-control", "min": 1}),
+        }

@@ -25,6 +25,35 @@
 </div>
 {% endif %}
 
-<h3>Sessions</h3>
-<p class="text-muted">Session management is built in the next phase.</p>
+<div class="d-flex justify-content-between align-items-center mt-4">
+    <h3>Sessions</h3>
+    {% if user.role == "organizer" %}
+        <a href="{% url 'events:session_create' event.id %}" class="btn btn-primary btn-sm">New Session</a>
+    {% endif %}
+</div>
+<table class="table table-bordered bg-white">
+    <thead><tr><th>Title</th><th>Start</th><th>Duration</th><th>Location</th><th>Capacity</th>{% if user.role == "organizer" %}<th></th>{% endif %}</tr></thead>
+    <tbody>
+    {% for session in event.sessions.all %}
+        <tr>
+            <td>{{ session.title }}</td>
+            <td>{{ session.start_time }}</td>
+            <td>{{ session.duration_minutes }} min</td>
+            <td>{{ session.location }}</td>
+            <td>{{ session.capacity }}</td>
+            {% if user.role == "organizer" %}
+            <td>
+                <a href="{% url 'events:session_update' event.id session.id %}" class="btn btn-outline-primary btn-sm">Edit</a>
+                <form method="post" action="{% url 'events:session_delete' event.id session.id %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete this session?')">Delete</button>
+                </form>
+            </td>
+            {% endif %}
+        </tr>
+    {% empty %}
+        <tr><td colspan="6" class="text-muted">No sessions yet.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
 {% endblock %}

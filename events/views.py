@@ -2,8 +2,8 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 
-from .forms import EventForm
-from .models import Event
+from .forms import EventForm, SessionForm
+from .models import Event, Session
 from .permissions import require_organizer
 
 # Create your views here.
@@ -70,3 +70,44 @@ def event_restore(request, event_id):
         event.save()
         messages.success(request, f"Event '{event.name} restored.")
     return redirect("events:event_list")
+
+@login_required
+def session_create(request, event_id):
+    require_organizer(request.user)
+    event = get_object_or_404(Event, pk=event_id)
+    if request.method == "POST":
+        form = SessionForm(request.POST)
+        if form.is_valid():
+            session = form.save(commit=False)
+            session.event = event
+            session.save()
+            messages.success(request, f"Session '{session.title}' created.")
+            return redirect("events:event_detail", event_id=event.id)
+    else:
+        form = SessionForm()
+    return render(request, "events/session_form.html", {"form": form, "event": event, "is_create": True})
+
+@login_required
+def session_update(request, event_id, session_id):
+    require_organizer(request.user)
+    event = get_object_or_404(Event, pk=event_id)
+    session = get_object_or_404(Session, pk=session_id, event=event)
+    if request.method == "POST":
+        form = SessionForm(request.POST, instance=session)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f"Session '{session.title}' updated.")
+            return redirect("events:event_detail", event_id=event.id)
+    else:
+        form = SessionForm(instance=session)
+    return render(request, "events/session_form.html", {"form": form, "event": event, "is_create": False, "session": session})
+
+@login_required
+def session_delete(request, event_id, session_id):
+    require_organizer(request.user)
+    event = get_object_or_404(Event, pk=event_id)
+    session = get_object_or_404(Session, pk=session_id, event=event)
+    if request.method == "POST":
+        session.delete()
+        messages.success(request, f"Session '{session.title}' deleted.")
+    return redirect("events:event_detail", event_id=event.id)

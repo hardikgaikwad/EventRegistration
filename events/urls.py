@@ -10,4 +10,7 @@ urlpatterns = [
     path("<int:event_id>/edit/", views.event_update, name="event_update"),
     path("<int:event_id>/archive/", views.event_archive, name="event_archive"),
     path("<int:event_id>/restore/", views.event_restore, name="event_restore"),
+    path("<int:event_id>/sessions/create/", views.session_create, name="session_create"),
+    path("<int:event_id>/sessions/<int:session_id>/edit/", views.session_update, name="session_update"),
+    path("<int:event_id>/sessions/<int:session_id>/delete/", views.session_delete, name="session_delete"),
 ]

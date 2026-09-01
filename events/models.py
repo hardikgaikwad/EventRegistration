@@ -17,3 +17,17 @@ class Event(models.Model):
         
     def __str__(self):
         return self.name
+    
+class Session(models.Model):
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="sessions")
+    title = models.CharField(max_length=200)
+    start_time = models.DateTimeField()
+    duration_minutes = models.PositiveIntegerField()
+    location = models.CharField(max_length=200)
+    capacity = models.PositiveIntegerField()
+    
+    class Meta:
+        ordering = ["start_time"]
+        
+    def __str__(self):
+        return f"{self.title} ({self.event.name})"
