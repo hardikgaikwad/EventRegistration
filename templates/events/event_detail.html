@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ event.name }}{% endblock %}
+{% block content %}
+<h1>{{ event.name }}
+    {% if event.is_archived %}<span class="badge bg-secondary">Archived</span>{% endif %}
+</h1>
+<p>{{ event.description }}</p>
+<p><strong>Dates:</strong> {{ event.start_date }} – {{ event.end_date }}<br>
+<strong>Venue:</strong> {{ event.venue }}</p>
+
+{% if user.role == "organizer" %}
+<div class="mb-3">
+    <a href="{% url 'events:event_update' event.id %}" class="btn btn-outline-primary btn-sm">Edit</a>
+    {% if event.is_archived %}
+        <form method="post" action="{% url 'events:event_restore' event.id %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-success btn-sm">Restore</button>
+        </form>
+    {% else %}
+        <form method="post" action="{% url 'events:event_archive' event.id %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-secondary btn-sm">Archive</button>
+        </form>
+    {% endif %}
+</div>
+{% endif %}
+
+<h3>Sessions</h3>
+<p class="text-muted">Session management is built in the next phase.</p>
+{% endblock %}
