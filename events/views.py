@@ -3,8 +3,9 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 
 from .forms import EventForm, SessionForm
-from .models import Event, Session
-from .permissions import require_organizer
+from .models import Event, Session, StaffAssignment
+from .permissions import require_organizer, user_can_manage_session, require_session_access
+from accounts.models import User
 
 # Create your views here.
 
@@ -111,3 +112,48 @@ def session_delete(request, event_id, session_id):
         session.delete()
         messages.success(request, f"Session '{session.title}' deleted.")
     return redirect("events:event_detail", event_id=event.id)
+
+@login_required
+def session_assignments(request, event_id, session_id):
+    require_organizer(request.user)
+    event = get_object_or_404(Event, pk=event_id)
+    session = get_object_or_404(Session, pk=session_id, event=event)
+    
+    if request.method == "POST":
+        staff_id = request.POST.get("staff_id")
+        staff_member = get_object_or_404(User, pk=staff_id, role=User.Role.STAFF)
+        _, created = StaffAssignment.objects.get_or_create(staff=staff_member, session=session)
+        if created:
+            messages.success(request, f"{staff_member.email} assigned to this session.")
+        else:
+            messages.info(request, f"{staff_member.email} was already assigned.")
+        return redirect("events:session_assignments", event_id=event.id, session_id=session.id)
+    
+    assigned_staff_ids = session.staff_assignments.values_list("staff_id", flat=True)
+    available_staff = User.objects.filter(role=User.Role.STAFF).exclude(id__in=assigned_staff_ids)
+    
+    return render(request, "events/session_assignments.html", {
+        "event": event,
+        "session": session,
+        "assignments": session.staff_assignments.select_related("staff"),
+        "available_staff": available_staff,
+    })
+    
+@login_required
+def assignment_delete(request, event_id, session_id, assignment_id):
+    require_organizer(request.user)
+    event = get_object_or_404(Event, pk=event_id)
+    session = get_object_or_404(Session, pk=session_id, event=event)
+    assignment = get_object_or_404(StaffAssignment, pk=assignment_id, session=session)
+    if request.method == "POST":
+        staff_email = assignment.staff.email
+        assignment.delete()
+        messages.success(request, f"{staff_email} removed from this session.")
+    return redirect("events:session_assignments", event_id=event.id, session_id=session.id)
+
+@login_required
+def staff_session_list(request):
+    assignments = StaffAssignment.objects.filter(staff=request.user).select_related(
+        "session", "session__event"
+    )
+    return render(request, "events/staff_session_list.html", {"assignments": assignments})

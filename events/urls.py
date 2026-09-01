@@ -13,4 +13,7 @@ urlpatterns = [
     path("<int:event_id>/sessions/create/", views.session_create, name="session_create"),
     path("<int:event_id>/sessions/<int:session_id>/edit/", views.session_update, name="session_update"),
     path("<int:event_id>/sessions/<int:session_id>/delete/", views.session_delete, name="session_delete"),
+    path("<int:event_id>/sessions/<int:session_id>/assignments/", views.session_assignments, name="session_assignments"),
+    path("<int:event_id>/sessions/<int:session_id>/assignments/<int:assignment_id>/delete/", views.assignment_delete, name="assignment_delete"),
+    path("my-sessions/", views.staff_session_list, name="staff_session_list"),
 ]

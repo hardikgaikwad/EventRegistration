@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}My Sessions{% endblock %}
+{% block content %}
+<h1>My Sessions</h1>
+<table class="table table-bordered bg-white">
+    <thead><tr><th>Session</th><th>Event</th><th>Start</th><th>Location</th></tr></thead>
+    <tbody>
+    {% for assignment in assignments %}
+        <tr>
+            <td>{{ assignment.session.title }}</td>
+            <td>{{ assignment.session.event.name }}</td>
+            <td>{{ assignment.session.start_time }}</td>
+            <td>{{ assignment.session.location }}</td>
+        </tr>
+    {% empty %}
+        <tr><td colspan="4" class="text-muted">You're not assigned to any sessions yet.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

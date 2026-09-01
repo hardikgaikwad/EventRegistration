@@ -44,6 +44,7 @@
             {% if user.role == "organizer" %}
             <td>
                 <a href="{% url 'events:session_update' event.id session.id %}" class="btn btn-outline-primary btn-sm">Edit</a>
+                <a href="{% url 'events:session_assignments' event.id session.id %}" class="btn btn-outline-secondary btn-sm">Staff</a>
                 <form method="post" action="{% url 'events:session_delete' event.id session.id %}" class="d-inline">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete this session?')">Delete</button>

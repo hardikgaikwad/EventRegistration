@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Assignments — {{ session.title }}{% endblock %}
+{% block content %}
+<h1>Staff Assignments</h1>
+<p>{{ session.title }} — {{ event.name }}</p>
+
+<table class="table table-bordered bg-white">
+    <thead><tr><th>Staff</th><th>Assigned</th><th></th></tr></thead>
+    <tbody>
+    {% for assignment in assignments %}
+        <tr>
+            <td>{{ assignment.staff.email }}</td>
+            <td>{{ assignment.created_at }}</td>
+            <td>
+                <form method="post" action="{% url 'events:assignment_delete' event.id session.id assignment.id %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-danger btn-sm">Remove</button>
+                </form>
+            </td>
+        </tr>
+    {% empty %}
+        <tr><td colspan="3" class="text-muted">No staff assigned yet.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+<h3>Assign staff</h3>
+{% if available_staff %}
+<form method="post">
+    {% csrf_token %}
+    <select name="staff_id" class="form-select mb-2" style="max-width: 300px;">
+        {% for staff_member in available_staff %}
+            <option value="{{ staff_member.id }}">{{ staff_member.email }}</option>
+        {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-primary">Assign</button>
+</form>
+{% else %}
+<p class="text-muted">All staff members are already assigned to this session.</p>
+{% endif %}
+
+<a href="{% url 'events:event_detail' event.id %}" class="d-inline-block mt-3">Back to event</a>
+{% endblock %}

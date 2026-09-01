@@ -1,8 +1,10 @@
 from django.test import TestCase
 from django.urls import reverse
+from django.core.exceptions import PermissionDenied
 
 from accounts.models import User
-from .models import Event, Session
+from .models import Event, Session, StaffAssignment
+from .permissions import user_can_manage_session, require_session_access
 
 # Create your tests here.
 
@@ -147,3 +149,44 @@ class SessionPermissionTests(TestCase):
         response = self.client.get(reverse("events:event_detail", args=[self.event.id]))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Opening Keynote")
+        
+from django.core.exceptions import PermissionDenied
+from .permissions import user_can_manage_session, require_session_access
+
+
+class SessionAccessPermissionTests(TestCase):
+    def setUp(self):
+        self.organizer = User.objects.create_user(
+            email="organizer3@example.com", password="pass12345", role=User.Role.ORGANIZER
+        )
+        self.assigned_staff = User.objects.create_user(
+            email="assigned@example.com", password="pass12345", role=User.Role.STAFF
+        )
+        self.unassigned_staff = User.objects.create_user(
+            email="unassigned@example.com", password="pass12345", role=User.Role.STAFF
+        )
+        self.event = Event.objects.create(
+            name="Test Conference", start_date="2026-01-01", end_date="2026-01-02", venue="Main Hall"
+        )
+        self.session = Session.objects.create(
+            event=self.event, title="Keynote", start_time="2026-01-01T09:00:00Z",
+            duration_minutes=60, location="Hall A", capacity=100,
+        )
+        StaffAssignment.objects.create(staff=self.assigned_staff, session=self.session)
+
+    def test_organizer_can_manage_any_session(self):
+        self.assertTrue(user_can_manage_session(self.organizer, self.session))
+
+    def test_assigned_staff_can_manage_their_session(self):
+        self.assertTrue(user_can_manage_session(self.assigned_staff, self.session))
+
+    def test_unassigned_staff_cannot_manage_session(self):
+        self.assertFalse(user_can_manage_session(self.unassigned_staff, self.session))
+
+    def test_require_session_access_raises_for_unassigned_staff(self):
+        with self.assertRaises(PermissionDenied):
+            require_session_access(self.unassigned_staff, self.session)
+
+    def test_require_session_access_passes_silently_for_assigned_staff(self):
+        # Should not raise
+        require_session_access(self.assigned_staff, self.session)
