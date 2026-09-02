@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{{ session.title }}{% endblock %}
+{% block content %}
+<h1>{{ session.title }}</h1>
+<p>{{ event.name }} — {{ session.location }} — {{ session.start_time }} — {{ session.duration_minutes }} min</p>
+<p><strong>Seats: {{ seats_taken }} / {{ session.capacity }}</strong>
+    {% if seats_taken >= session.capacity %}<span class="badge bg-danger">At capacity</span>{% endif %}
+</p>
+
+<a href="{% url 'registrations:registration_create' session.id %}" class="btn btn-primary mb-3">Register Attendee</a>
+
+<table class="table table-bordered bg-white">
+    <thead><tr><th>Attendee</th><th>Email</th><th>Status</th><th>Reserved</th><th></th></tr></thead>
+    <tbody>
+    {% for registration in registrations %}
+        <tr>
+            <td>{{ registration.attendee_name }}</td>
+            <td>{{ registration.attendee_email }}</td>
+            <td>
+                <span class="badge
+                    {% if registration.status == 'reserved' %}bg-warning
+                    {% elif registration.status == 'confirmed' %}bg-info
+                    {% elif registration.status == 'checked_in' %}bg-success
+                    {% elif registration.status == 'expired' %}bg-secondary
+                    {% else %}bg-dark{% endif %}">
+                    {{ registration.get_status_display }}
+                </span>
+            </td>
+            <td>{{ registration.reserved_at }}</td>
+            <td>
+                {% if registration.status == 'reserved' %}
+                    <form method="post" action="{% url 'registrations:registration_confirm' registration.id %}" class="d-inline">
+                        {% csrf_token %}<button type="submit" class="btn btn-outline-info btn-sm">Confirm</button>
+                    </form>
+                    <form method="post" action="{% url 'registrations:registration_cancel' registration.id %}" class="d-inline">
+                        {% csrf_token %}<button type="submit" class="btn btn-outline-danger btn-sm">Cancel</button>
+                    </form>
+                {% elif registration.status == 'confirmed' %}
+                    <form method="post" action="{% url 'registrations:registration_check_in' registration.id %}" class="d-inline">
+                        {% csrf_token %}<button type="submit" class="btn btn-outline-success btn-sm">Check in</button>
+                    </form>
+                    <form method="post" action="{% url 'registrations:registration_cancel' registration.id %}" class="d-inline">
+                        {% csrf_token %}<button type="submit" class="btn btn-outline-danger btn-sm">Cancel</button>
+                    </form>
+                {% endif %}
+            </td>
+        </tr>
+    {% empty %}
+        <tr><td colspan="5" class="text-muted">No registrations yet.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

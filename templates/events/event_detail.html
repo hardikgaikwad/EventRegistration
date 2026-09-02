@@ -36,7 +36,7 @@
     <tbody>
     {% for session in event.sessions.all %}
         <tr>
-            <td>{{ session.title }}</td>
+            <td><a href="{% url 'events:session_detail' event.id session.id %}">{{ session.title }}</a></td>
             <td>{{ session.start_time }}</td>
             <td>{{ session.duration_minutes }} min</td>
             <td>{{ session.location }}</td>

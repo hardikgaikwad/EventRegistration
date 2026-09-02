@@ -7,6 +7,10 @@ from .models import Event, Session, StaffAssignment
 from .permissions import require_organizer, user_can_manage_session, require_session_access
 from accounts.models import User
 
+from registrations.models import Registration
+from registrations.services import compute_seats_taken
+from .permissions import require_organizer, require_session_access
+
 # Create your views here.
 
 @login_required
@@ -157,3 +161,19 @@ def staff_session_list(request):
         "session", "session__event"
     )
     return render(request, "events/staff_session_list.html", {"assignments": assignments})
+
+@login_required
+def session_detail(request, event_id, session_id):
+    event = get_object_or_404(Event, pk=event_id)
+    session = get_object_or_404(Session, pk=session_id, event=event)
+    require_session_access(request.user, session)
+    
+    registrations = session.registrations.all().order_by("-reserved_at")
+    seats_taken = compute_seats_taken(session)
+    
+    return render(request, "events/session_detail.html", {
+        "event": event,
+        "session": session,
+        "registrations": registrations,
+        "seats_taken": seats_taken
+    })

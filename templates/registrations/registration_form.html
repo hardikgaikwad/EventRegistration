@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Register Attendee{% endblock %}
+{% block content %}
+<h1>Register Attendee — {{ session.title }}</h1>
+<form method="post">
+    {% csrf_token %}
+    {% for field in form %}
+        <div class="mb-3">
+            <label class="form-label">{{ field.label }}</label>
+            {{ field }}
+            {% if field.errors %}<div class="text-danger small">{{ field.errors }}</div>{% endif %}
+        </div>
+    {% endfor %}
+    <button type="submit" class="btn btn-primary">Reserve Seat</button>
+    <a href="{% url 'events:session_detail' session.event_id session.id %}" class="btn btn-link">Cancel</a>
+</form>
+{% endblock %}

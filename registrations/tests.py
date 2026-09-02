@@ -1,6 +1,8 @@
 import threading
 from django.test import TestCase, TransactionTestCase
 from django.db import connection
+from django.urls import reverse
+from events.models import StaffAssignment
 
 from accounts.models import User
 from events.models import Event, Session
@@ -134,3 +136,64 @@ class ConcurrentReservationTests(TransactionTestCase):
         self.assertEqual(results.count("success"), 1)
         self.assertEqual(results.count("rejected"), 1)
         self.assertEqual(Registration.objects.filter(session=self.session).count(), 1)
+        
+class RegistrationViewPermissionTests(TestCase):
+    def setUp(self):
+        self.organizer = User.objects.create_user(
+            email="organizer4@example.com", password="pass12345", role=User.Role.ORGANIZER
+        )
+        self.assigned_staff = User.objects.create_user(
+            email="assigned2@example.com", password="pass12345", role=User.Role.STAFF
+        )
+        self.unassigned_staff = User.objects.create_user(
+            email="unassigned2@example.com", password="pass12345", role=User.Role.STAFF
+        )
+        event = Event.objects.create(
+            name="Test Conference", start_date="2026-01-01", end_date="2026-01-02", venue="Main Hall"
+        )
+        self.session = Session.objects.create(
+            event=event, title="Keynote", start_time="2026-01-01T09:00:00Z",
+            duration_minutes=60, location="Hall A", capacity=10,
+        )
+        StaffAssignment.objects.create(staff=self.assigned_staff, session=self.session)
+        self.registration = Registration.objects.create(
+            session=self.session, attendee_name="Jane Doe", attendee_email="jane@example.com",
+            status=Registration.Status.RESERVED,
+        )
+
+    def test_unassigned_staff_cannot_view_session_detail(self):
+        self.client.force_login(self.unassigned_staff)
+        response = self.client.get(reverse("events:session_detail", args=[self.session.event_id, self.session.id]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_unassigned_staff_cannot_register_attendee(self):
+        self.client.force_login(self.unassigned_staff)
+        response = self.client.post(
+            reverse("registrations:registration_create", args=[self.session.id]),
+            {"attendee_name": "Intruder", "attendee_email": "intruder@example.com"},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(Registration.objects.filter(attendee_email="intruder@example.com").exists())
+
+    def test_unassigned_staff_cannot_confirm_registration(self):
+        self.client.force_login(self.unassigned_staff)
+        response = self.client.post(reverse("registrations:registration_confirm", args=[self.registration.id]))
+        self.assertEqual(response.status_code, 403)
+        self.registration.refresh_from_db()
+        self.assertEqual(self.registration.status, Registration.Status.RESERVED)  # unchanged
+
+    def test_assigned_staff_can_register_attendee(self):
+        self.client.force_login(self.assigned_staff)
+        response = self.client.post(
+            reverse("registrations:registration_create", args=[self.session.id]),
+            {"attendee_name": "Legit Attendee", "attendee_email": "legit@example.com"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Registration.objects.filter(attendee_email="legit@example.com").exists())
+
+    def test_organizer_can_act_on_any_session_unassigned_or_not(self):
+        self.client.force_login(self.organizer)
+        response = self.client.post(reverse("registrations:registration_confirm", args=[self.registration.id]))
+        self.assertEqual(response.status_code, 302)
+        self.registration.refresh_from_db()
+        self.assertEqual(self.registration.status, Registration.Status.CONFIRMED)
