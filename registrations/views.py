@@ -54,8 +54,9 @@ def registration_confirm(request, registration_id):
     registration = get_object_or_404(Registration, pk=registration_id)
     require_session_access(request.user, registration.session)
     if request.method == "POST":
+        note = request.POST.get("note", "").strip() or None
         try:
-            transition(registration, Registration.Status.CONFIRMED, changed_by=request.user)
+            transition(registration, Registration.Status.CONFIRMED, changed_by=request.user, note=note)
             messages.success(request, f"{registration.attendee_name} confirmed.")
         except TransitionError as e:
             messages.error(request, str(e))
@@ -70,8 +71,9 @@ def registration_check_in(request, registration_id):
     registration = get_object_or_404(Registration, pk=registration_id)
     require_session_access(request.user, registration.session)
     if request.method == "POST":
+        note = request.POST.get("note", "").strip() or None
         try:
-            transition(registration, Registration.Status.CHECKED_IN, changed_by=request.user)
+            transition(registration, Registration.Status.CHECKED_IN, changed_by=request.user, note=note)
             messages.success(request, f"{registration.attendee_name} checked_in.")
         except TransitionError as e:
             messages.error(request, str(e))
@@ -86,6 +88,7 @@ def registration_cancel(request, registration_id):
     registration = get_object_or_404(Registration, pk=registration_id)
     require_session_access(request.user, registration.session)
     if request.method == "POST":
+        note = request.POST.get("note", "").strip() or None
         try:
             transition(registration, Registration.Status.CANCELLED, changed_by=request.user)
             messages.success(request, f"{registration.attendee_name}'s registration cancelled.")
@@ -194,3 +197,4 @@ def registration_timeline(request, registration_id):
         "registration": registration,
         "events": events,
     })
+    

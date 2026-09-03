@@ -10,7 +10,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from events.models import StaffAssignment
 from accounts.models import User
 from events.models import Event, Session
-from .models import Registration, RegistrationEvent
+from .models import Registration, RegistrationEvent, DismissedAlert
 from .services import (
     CapacityFullError,
     DuplicateRegistrationError,
@@ -20,6 +20,8 @@ from .services import (
     import_registrations_from_csv,
     reserve_seat,
     transition,
+    session_is_at_capacity,
+    session_alert_is_active
 )
 
 # Create your tests here.
@@ -387,7 +389,7 @@ class RegistrationListTests(TestCase):
         # no matter how many registrations exist - proves we're not doing
         # an extra query per row (the N+1 bug select_related prevents).
         self.client.force_login(self.organizer)
-        with self.assertNumQueries(6):  # session query, count query, registrations query, events/sessions dropdowns
+        with self.assertNumQueries(9):  # session query, count query, registrations query, events/sessions dropdowns
             self.client.get(reverse("registrations:registration_list"))
             
 class CsvImportExportTests(TestCase):
@@ -634,3 +636,76 @@ class RegistrationTimelineTests(TestCase):
         self.client.force_login(unassigned_staff)
         response = self.client.get(reverse("registrations:registration_timeline", args=[registration.id]))
         self.assertEqual(response.status_code, 403)
+        
+class AlertTests(TestCase):
+    def setUp(self):
+        self.organizer = User.objects.create_user(
+            email="alert_organizer@example.com", password="pass12345", role=User.Role.ORGANIZER
+        )
+        self.staff = User.objects.create_user(
+            email="alert_staff@example.com", password="pass12345", role=User.Role.STAFF
+        )
+        event = Event.objects.create(
+            name="Alert Test Event", start_date="2026-01-01", end_date="2026-01-01", venue="Hall"
+        )
+        self.session = Session.objects.create(
+            event=event, title="Small Session", start_time="2026-01-01T09:00:00Z",
+            duration_minutes=60, location="Room 1", capacity=2,
+        )
+        StaffAssignment.objects.create(staff=self.staff, session=self.session)
+
+    def test_session_below_capacity_has_no_active_alert(self):
+        reserve_seat(self.session, "Alice", "alice@example.com")
+        self.assertFalse(session_is_at_capacity(self.session))
+        self.assertFalse(session_alert_is_active(self.session))
+
+    def test_session_at_capacity_has_an_active_alert(self):
+        reserve_seat(self.session, "Alice", "alice@example.com")
+        reserve_seat(self.session, "Bob", "bob@example.com")
+        self.assertTrue(session_is_at_capacity(self.session))
+        self.assertTrue(session_alert_is_active(self.session))
+
+    def test_dismissing_deactivates_the_alert(self):
+        reserve_seat(self.session, "Alice", "alice@example.com")
+        bob = reserve_seat(self.session, "Bob", "bob@example.com")
+        DismissedAlert.objects.create(session=self.session, dismissed_by=self.organizer)
+        self.assertTrue(session_is_at_capacity(self.session))  # still full
+        self.assertFalse(session_alert_is_active(self.session))  # but dismissed
+
+    def test_cancellation_clears_dismissal_and_refill_reactivates_alert(self):
+        alice = reserve_seat(self.session, "Alice", "alice@example.com")
+        bob = reserve_seat(self.session, "Bob", "bob@example.com")
+        DismissedAlert.objects.create(session=self.session, dismissed_by=self.organizer)
+        self.assertFalse(session_alert_is_active(self.session))  # dismissed, full
+
+        transition(bob, Registration.Status.CANCELLED, changed_by=self.organizer)
+        # dropped below capacity - the dismissal should have been cleared automatically
+        self.assertFalse(DismissedAlert.objects.filter(session=self.session).exists())
+        self.assertFalse(session_alert_is_active(self.session))  # not at capacity anymore either
+
+        # refill it - a NEW active alert should appear with no manual action
+        reserve_seat(self.session, "Carol", "carol@example.com")
+        self.assertTrue(session_alert_is_active(self.session))
+
+    def test_alerts_list_shows_only_at_capacity_sessions_for_organizer(self):
+        reserve_seat(self.session, "Alice", "alice@example.com")
+        reserve_seat(self.session, "Bob", "bob@example.com")  # now at capacity
+        self.client.force_login(self.organizer)
+        response = self.client.get(reverse("events:alerts_list"))
+        self.assertContains(response, "Small Session")
+
+    def test_staff_cannot_dismiss_alert(self):
+        reserve_seat(self.session, "Alice", "alice@example.com")
+        reserve_seat(self.session, "Bob", "bob@example.com")
+        self.client.force_login(self.staff)
+        response = self.client.post(reverse("events:alert_dismiss", args=[self.session.id]))
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(DismissedAlert.objects.filter(session=self.session).exists())
+
+    def test_organizer_can_dismiss_alert(self):
+        reserve_seat(self.session, "Alice", "alice@example.com")
+        reserve_seat(self.session, "Bob", "bob@example.com")
+        self.client.force_login(self.organizer)
+        response = self.client.post(reverse("events:alert_dismiss", args=[self.session.id]))
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(DismissedAlert.objects.filter(session=self.session).exists())

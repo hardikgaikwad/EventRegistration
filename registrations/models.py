@@ -46,3 +46,11 @@ class RegistrationEvent(models.Model):
         
     def __str__(self):
         return f"{self.registration_id}: {self.old_status} -> {self.new_status}"
+    
+class DismissedAlert(models.Model):
+    session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name="dismissed_alerts")
+    dismissed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    dismissed_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"Dismissed alert for {self.session.title}"

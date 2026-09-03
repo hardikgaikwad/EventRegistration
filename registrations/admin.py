@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Registration, RegistrationEvent
+from .models import Registration, RegistrationEvent, DismissedAlert
 
 # Register your models here.
 
@@ -23,3 +23,7 @@ class RegistrationEventAdmin(admin.ModelAdmin):
     
     def has_delete_permission(self, request, obj=None):
         return False
+    
+@admin.register
+class DismissedAlertAdmin(admin.ModelAdmin):
+    list_display = ["session", "dismissed_by", "dismissed_at"]

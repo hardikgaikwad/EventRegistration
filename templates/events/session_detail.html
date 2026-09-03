@@ -34,14 +34,20 @@
             <td>
                 {% if registration.status == 'reserved' %}
                     <form method="post" action="{% url 'registrations:registration_confirm' registration.id %}" class="d-inline">
-                        {% csrf_token %}<button type="submit" class="btn btn-outline-info btn-sm">Confirm</button>
+                        {% csrf_token %}
+                        <input type="text" name="note" placeholder="Optional note" class="form-control form-control-sm d-inline-block mb-1" style="width: 150px;">
+                        <button type="submit" class="btn btn-outline-info btn-sm">Confirm</button>
                     </form>
                     <form method="post" action="{% url 'registrations:registration_cancel' registration.id %}" class="d-inline">
-                        {% csrf_token %}<button type="submit" class="btn btn-outline-danger btn-sm">Cancel</button>
+                        {% csrf_token %}
+                        <input type="text" name="note" placeholder="Optional note" class="form-control form-control-sm d-inline-block mb-1" style="width: 150px;">
+                        <button type="submit" class="btn btn-outline-danger btn-sm">Cancel</button>
                     </form>
                 {% elif registration.status == 'confirmed' %}
                     <form method="post" action="{% url 'registrations:registration_check_in' registration.id %}" class="d-inline">
-                        {% csrf_token %}<button type="submit" class="btn btn-outline-success btn-sm">Check in</button>
+                        {% csrf_token %}
+                        <input type="text" name="note" placeholder="Optional note" class="form-control form-control-sm d-inline-block mb-1" style="width: 150px;">
+                        <button type="submit" class="btn btn-outline-success btn-sm">Check in</button>
                     </form>
                     <form method="post" action="{% url 'registrations:registration_cancel' registration.id %}" class="d-inline">
                         {% csrf_token %}<button type="submit" class="btn btn-outline-danger btn-sm">Cancel</button>

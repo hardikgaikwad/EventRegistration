@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}At-Capacity Alerts{% endblock %}
+{% block content %}
+<h1>At-Capacity Alerts</h1>
+<table class="table table-bordered bg-white">
+    <thead><tr><th>Session</th><th>Event</th><th>Capacity</th>{% if user.role == "organizer" %}<th></th>{% endif %}</tr></thead>
+    <tbody>
+    {% for session in sessions %}
+        <tr>
+            <td><a href="{% url 'events:session_detail' session.event_id session.id %}">{{ session.title }}</a></td>
+            <td>{{ session.event.name }}</td>
+            <td>{{ session.capacity }} / {{ session.capacity }} <span class="badge bg-danger">Full</span></td>
+            {% if user.role == "organizer" %}
+            <td>
+                <form method="post" action="{% url 'events:alert_dismiss' session.id %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-secondary btn-sm">Dismiss</button>
+                </form>
+            </td>
+            {% endif %}
+        </tr>
+    {% empty %}
+        <tr><td colspan="4" class="text-muted">No active alerts.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

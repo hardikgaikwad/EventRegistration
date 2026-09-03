@@ -17,3 +17,12 @@ def user_can_manage_session(user, session):
 def require_session_access(user, session):
     if not user_can_manage_session(user, session):
         raise PermissionDenied("You are not assigned to this session.")
+    
+def visible_sessions_for_user(user):
+    from .models import Session
+    
+    if not user.is_authenticated:
+        return Session.objects.none()
+    if user_is_organizer(user):
+        return Session.objects.all()
+    return Session.objects.filter(staff_assignments__staff=user)

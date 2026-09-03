@@ -7,9 +7,9 @@ from .models import Event, Session, StaffAssignment
 from .permissions import require_organizer, user_can_manage_session, require_session_access
 from accounts.models import User
 
-from registrations.models import Registration
-from registrations.services import compute_seats_taken, expire_stale_reservations
-from .permissions import require_organizer, require_session_access
+from registrations.models import Registration, DismissedAlert
+from registrations.services import compute_seats_taken, expire_stale_reservations, session_alert_is_active
+from .permissions import require_organizer, require_session_access, user_is_organizer, visible_sessions_for_user
 
 # Create your views here.
 
@@ -179,3 +179,18 @@ def session_detail(request, event_id, session_id):
         "registrations": registrations,
         "seats_taken": seats_taken
     })
+    
+@login_required
+def alerts_list(request):
+    sessions = visible_sessions_for_user(request.user).select_related("event")
+    active_alert_sessions = [s for s in sessions if session_alert_is_active(s)]
+    return render(request, "events/alerts_list.html", {"sessions": active_alert_sessions})
+    
+@login_required
+def alert_dismiss(request, session_id):
+    require_organizer(request.user)
+    session = get_object_or_404(Session, pk=session_id)
+    if request.method == "POST":
+        DismissedAlert.objects.get_or_create(session=session, defaults={"dismissed_by": request.user})
+        messages.success(request, f"Alert dismissed for '{session.title}'.")
+    return redirect("events:alerts_list")

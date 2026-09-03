@@ -29,6 +29,12 @@
             <li class="nav-item me-3">
                 <span class="text-white-50">{{ user.email }} ({{ user.get_role_display }})</span>
             </li>
+            <li class="nav-item me-3">
+                <a class="nav-link text-white" href="{% url 'events:alerts_list' %}">
+                    Alerts
+                    {% if active_alert_count > 0 %}<span class="badge bg-danger">{{ active_alert_count }}</span>{% endif %}
+                </a>
+            </li>
             <li class="nav-item">
                 <form method="post" action="{% url 'accounts:logout' %}" class="d-inline">
                     {% csrf_token %}

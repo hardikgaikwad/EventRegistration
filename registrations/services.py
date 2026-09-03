@@ -9,7 +9,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import EmailValidator
 
 from events.models import Session
-from .models import Registration, RegistrationEvent
+from .models import Registration, RegistrationEvent, DismissedAlert
 
 class TransitionError(Exception):
     pass
@@ -35,6 +35,16 @@ ALLOWED_TRANSITIONS = {
     Registration.Status.CANCELLED: set(),
 }
 
+def session_is_at_capacity(session):
+    return compute_seats_taken(session) >= session.capacity
+
+def session_alert_is_active(session):
+    return session_is_at_capacity(session) and not session.dismissed_alerts.exists()
+
+def clear_dismissed_alert_if_below_capacity(session):
+    if compute_seats_taken(session) < session.capacity:
+        DismissedAlert.objects.filter(session=session).delete()
+
 def transition(registration, new_status, changed_by=None, note=None):
     old_status = registration.status
     
@@ -54,6 +64,8 @@ def transition(registration, new_status, changed_by=None, note=None):
             changed_by=changed_by,
             note=note,
         )
+        
+        clear_dismissed_alert_if_below_capacity(registration.session)
         
     return registration
 
