@@ -12,3 +12,14 @@ class RegistrationAdmin(admin.ModelAdmin):
 @admin.register(RegistrationEvent)
 class RegistrationEventAdmin(admin.ModelAdmin):
     list_display = ["registration", "old_status", "new_status", "changed_by", "created_at"]
+    list_filter = ["new_status"]
+    readonly_fields = ["registration", "old_status", "new_status", "changed_by", "note", "created_at"]
+    
+    def has_add_permission(self, request):
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        return False
+    
+    def has_delete_permission(self, request, obj=None):
+        return False

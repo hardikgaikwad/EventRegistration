@@ -182,3 +182,15 @@ def session_roster_csv(request, session_id):
         writer.writerow(row)
         
     return response
+
+@login_required
+def registration_timeline(request, registration_id):
+    registration = get_object_or_404(Registration, pk=registration_id)
+    require_session_access(request.user, registration.session)
+    
+    events = registration.events.all().order_by("created_at")
+    
+    return render(request, "registrations/registration_timeline.html", {
+        "registration": registration,
+        "events": events,
+    })

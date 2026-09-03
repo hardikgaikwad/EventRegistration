@@ -511,3 +511,126 @@ class CsvImportExportTests(TestCase):
         response = self.client.get(reverse("registrations:session_roster_csv", args=[self.session.id]))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv")
+        
+class RegistrationEventImmutabilityTests(TestCase):
+    def setUp(self):
+        self.superuser = User.objects.create_superuser(
+            email="superuser@example.com", password="pass12345"
+        )
+        event = Event.objects.create(
+            name="Immutability Test Event", start_date="2026-01-01", end_date="2026-01-01", venue="Hall"
+        )
+        session = Session.objects.create(
+            event=event, title="Session", start_time="2026-01-01T09:00:00Z",
+            duration_minutes=60, location="Room 1", capacity=10,
+        )
+        self.registration = reserve_seat(session, "Alice Adams", "alice@example.com")
+        self.event_row = RegistrationEvent.objects.filter(registration=self.registration).first()
+
+    def test_admin_change_permission_is_always_denied(self):
+        from registrations.admin import RegistrationEventAdmin
+        from django.contrib.admin.sites import AdminSite
+
+        admin_instance = RegistrationEventAdmin(RegistrationEvent, AdminSite())
+        self.assertFalse(admin_instance.has_change_permission(None))
+        self.assertFalse(admin_instance.has_delete_permission(None))
+        self.assertFalse(admin_instance.has_add_permission(None))
+
+    def test_superuser_can_view_but_not_edit_registration_event(self):
+        self.client.force_login(self.superuser)
+        url = f"/admin/registrations/registrationevent/{self.event_row.pk}/change/"
+
+        # GET succeeds - Django shows a read-only view since has_view is
+        # implicitly true even though has_change_permission is False
+        get_response = self.client.get(url)
+        self.assertEqual(get_response.status_code, 200)
+
+        # POST (an actual attempted save) is what's really blocked
+        original_note = self.event_row.note
+        post_response = self.client.post(url, {
+            "new_status": "expired",  # attempting to tamper with the status
+            "note": "TAMPERED",
+        })
+        self.assertEqual(post_response.status_code, 403)
+
+        self.event_row.refresh_from_db()
+        self.assertEqual(self.event_row.new_status, Registration.Status.RESERVED)  # unchanged
+        self.assertEqual(self.event_row.note, original_note)  # unchanged
+
+    def test_superuser_cannot_delete_via_admin(self):
+        self.client.force_login(self.superuser)
+        url = f"/admin/registrations/registrationevent/{self.event_row.pk}/delete/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(RegistrationEvent.objects.filter(pk=self.event_row.pk).exists())
+
+    def test_registration_event_count_never_decreases_across_lifecycle(self):
+        # A sanity check that the audit trail only ever grows - each legal
+        # transition adds exactly one row, nothing ever removes one.
+        transition(self.registration, Registration.Status.CONFIRMED)
+        count_after_confirm = RegistrationEvent.objects.filter(registration=self.registration).count()
+        self.assertEqual(count_after_confirm, 2)  # creation + confirm
+
+        transition(self.registration, Registration.Status.CHECKED_IN)
+        count_after_checkin = RegistrationEvent.objects.filter(registration=self.registration).count()
+        self.assertEqual(count_after_checkin, 3)  # + check-in
+        
+class RegistrationTimelineTests(TestCase):
+    def setUp(self):
+        self.organizer = User.objects.create_user(
+            email="timeline_organizer@example.com", password="pass12345", role=User.Role.ORGANIZER
+        )
+        event = Event.objects.create(
+            name="Timeline Test Event", start_date="2026-01-01", end_date="2026-01-01", venue="Hall"
+        )
+        self.session = Session.objects.create(
+            event=event, title="Session", start_time="2026-01-01T09:00:00Z",
+            duration_minutes=60, location="Room 1", capacity=10,
+        )
+
+    def test_timeline_shows_creation_and_transitions_in_order(self):
+        registration = reserve_seat(self.session, "Alice Adams", "alice@example.com", created_by=self.organizer)
+        transition(registration, Registration.Status.CONFIRMED, changed_by=self.organizer, note="Confirmed by phone.")
+        transition(registration, Registration.Status.CHECKED_IN, changed_by=self.organizer)
+
+        self.client.force_login(self.organizer)
+        response = self.client.get(reverse("registrations:registration_timeline", args=[registration.id]))
+
+        self.assertEqual(response.status_code, 200)
+        events = list(response.context["events"])
+        self.assertEqual(len(events), 3)
+
+        # events must be in chronological order: creation, confirm, check-in
+        self.assertIsNone(events[0].old_status)
+        self.assertEqual(events[0].new_status, Registration.Status.RESERVED)
+
+        self.assertEqual(events[1].old_status, Registration.Status.RESERVED)
+        self.assertEqual(events[1].new_status, Registration.Status.CONFIRMED)
+        self.assertEqual(events[1].note, "Confirmed by phone.")
+
+        self.assertEqual(events[2].old_status, Registration.Status.CONFIRMED)
+        self.assertEqual(events[2].new_status, Registration.Status.CHECKED_IN)
+
+    def test_timeline_shows_system_for_automated_changes(self):
+        registration = reserve_seat(self.session, "Bob Baker", "bob@example.com")
+        # Backdate and expire it, same technique as the expiry tests -
+        # produces a changed_by=None event, exactly what the expiry
+        # command generates.
+        Registration.objects.filter(pk=registration.pk).update(
+            reserved_at=timezone.now() - timedelta(minutes=45)
+        )
+        expire_stale_reservations(self.session)
+
+        self.client.force_login(self.organizer)
+        response = self.client.get(reverse("registrations:registration_timeline", args=[registration.id]))
+        self.assertContains(response, "System")
+
+    def test_timeline_requires_session_access(self):
+        unassigned_staff = User.objects.create_user(
+            email="timeline_staff@example.com", password="pass12345", role=User.Role.STAFF
+        )
+        registration = reserve_seat(self.session, "Carol Carter", "carol@example.com")
+
+        self.client.force_login(unassigned_staff)
+        response = self.client.get(reverse("registrations:registration_timeline", args=[registration.id]))
+        self.assertEqual(response.status_code, 403)

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Timeline — {{ registration.attendee_name }}{% endblock %}
+{% block content %}
+<h1>Timeline — {{ registration.attendee_name }}</h1>
+<p class="text-muted">{{ registration.attendee_email }} — {{ registration.session.title }} ({{ registration.session.event.name }})</p>
+
+<ul class="list-group">
+    {% for event in events %}
+        <li class="list-group-item">
+            <strong>
+                {% if event.old_status %}
+                    {{ event.get_old_status_display }} → {{ event.get_new_status_display }}
+                {% else %}
+                    Created as {{ event.get_new_status_display }}
+                {% endif %}
+            </strong>
+            <div class="text-muted small">
+                {{ event.created_at }} —
+                {% if event.changed_by %}{{ event.changed_by.email }}{% else %}System{% endif %}
+            </div>
+            {% if event.note %}<div class="mt-1">{{ event.note }}</div>{% endif %}
+        </li>
+    {% endfor %}
+</ul>
+
+<a href="{% url 'events:session_detail' registration.session.event_id registration.session_id %}" class="btn btn-primary mt-3">Back to session</a>
+{% endblock %}

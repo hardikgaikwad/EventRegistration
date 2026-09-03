@@ -47,6 +47,7 @@
                         {% csrf_token %}<button type="submit" class="btn btn-outline-danger btn-sm">Cancel</button>
                     </form>
                 {% endif %}
+                <a href="{% url 'registrations:registration_timeline' registration.id %}" class="btn btn-outline-secondary btn-sm">History</a>
             </td>
         </tr>
     {% empty %}

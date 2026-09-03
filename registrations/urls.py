@@ -8,6 +8,7 @@ urlpatterns = [
     path("<int:registration_id>/confirm/", views.registration_confirm, name="registration_confirm"),
     path("<int:registration_id>/check-in/", views.registration_check_in, name="registration_check_in"),
     path("<int:registration_id>/cancel/", views.registration_cancel, name="registration_cancel"),
+    path("<int:registration_id>/timeline/", views.registration_timeline, name="registration_timeline"),
     path("", views.registration_list, name="registration_list"),
     path("sessions/<int:session_id>/import/", views.registration_import, name="registration_import"),
     path("sessions/<int:session_id>/export/", views.session_roster_csv, name="session_roster_csv"),
