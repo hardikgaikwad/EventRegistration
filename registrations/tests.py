@@ -255,3 +255,127 @@ class ExpiryTests(TestCase):
         self.assertEqual(
             Registration.objects.filter(session=self.session, status=Registration.Status.EXPIRED).count(), 1
         )
+        
+class RegistrationListTests(TestCase):
+    def setUp(self):
+        self.organizer = User.objects.create_user(
+            email="organizer5@example.com", password="pass12345", role=User.Role.ORGANIZER
+        )
+        self.staff_a = User.objects.create_user(
+            email="staffA@example.com", password="pass12345", role=User.Role.STAFF
+        )
+        self.staff_b = User.objects.create_user(
+            email="staffB@example.com", password="pass12345", role=User.Role.STAFF
+        )
+
+        self.event_1 = Event.objects.create(
+            name="Event One", start_date="2026-01-01", end_date="2026-01-01", venue="Hall A"
+        )
+        self.event_2 = Event.objects.create(
+            name="Event Two", start_date="2026-02-01", end_date="2026-02-01", venue="Hall B"
+        )
+
+        self.session_1 = Session.objects.create(
+            event=self.event_1, title="Session One", start_time="2026-01-01T09:00:00Z",
+            duration_minutes=60, location="Room 1", capacity=10,
+        )
+        self.session_2 = Session.objects.create(
+            event=self.event_2, title="Session Two", start_time="2026-02-01T09:00:00Z",
+            duration_minutes=60, location="Room 2", capacity=10,
+        )
+
+        # staff_a is only assigned to session_1; staff_b isn't assigned to anything
+        StaffAssignment.objects.create(staff=self.staff_a, session=self.session_1)
+
+        Registration.objects.create(
+            session=self.session_1, attendee_name="Alice Adams", attendee_email="alice@example.com",
+            status=Registration.Status.RESERVED,
+        )
+        Registration.objects.create(
+            session=self.session_1, attendee_name="Bob Baker", attendee_email="bob@example.com",
+            status=Registration.Status.CONFIRMED,
+        )
+        Registration.objects.create(
+            session=self.session_2, attendee_name="Carol Carter", attendee_email="carol@example.com",
+            status=Registration.Status.RESERVED,
+        )
+
+    def test_organizer_sees_all_registrations(self):
+        self.client.force_login(self.organizer)
+        response = self.client.get(reverse("registrations:registration_list"))
+        self.assertEqual(response.context["total_count"], 3)
+
+    def test_staff_only_sees_registrations_for_assigned_sessions(self):
+        self.client.force_login(self.staff_a)
+        response = self.client.get(reverse("registrations:registration_list"))
+        # staff_a is assigned to session_1 only -> Alice + Bob, not Carol
+        self.assertEqual(response.context["total_count"], 2)
+        names = [r.attendee_name for r in response.context["page"]]
+        self.assertIn("Alice Adams", names)
+        self.assertIn("Bob Baker", names)
+        self.assertNotIn("Carol Carter", names)
+
+    def test_unassigned_staff_sees_nothing(self):
+        self.client.force_login(self.staff_b)
+        response = self.client.get(reverse("registrations:registration_list"))
+        self.assertEqual(response.context["total_count"], 0)
+
+    def test_search_by_partial_name(self):
+        self.client.force_login(self.organizer)
+        response = self.client.get(reverse("registrations:registration_list"), {"q": "ali"})
+        self.assertEqual(response.context["total_count"], 1)
+        self.assertEqual(response.context["page"][0].attendee_name, "Alice Adams")
+
+    def test_search_by_partial_email(self):
+        self.client.force_login(self.organizer)
+        response = self.client.get(reverse("registrations:registration_list"), {"q": "bob@"})
+        self.assertEqual(response.context["total_count"], 1)
+        self.assertEqual(response.context["page"][0].attendee_email, "bob@example.com")
+
+    def test_filter_by_status(self):
+        self.client.force_login(self.organizer)
+        response = self.client.get(reverse("registrations:registration_list"), {"status": "confirmed"})
+        self.assertEqual(response.context["total_count"], 1)
+        self.assertEqual(response.context["page"][0].attendee_name, "Bob Baker")
+
+    def test_filter_by_event(self):
+        self.client.force_login(self.organizer)
+        response = self.client.get(reverse("registrations:registration_list"), {"event": self.event_2.id})
+        self.assertEqual(response.context["total_count"], 1)
+        self.assertEqual(response.context["page"][0].attendee_name, "Carol Carter")
+
+    def test_filter_by_session(self):
+        self.client.force_login(self.organizer)
+        response = self.client.get(reverse("registrations:registration_list"), {"session": self.session_1.id})
+        self.assertEqual(response.context["total_count"], 2)
+
+    def test_staff_cannot_leak_into_unassigned_event_via_url_tampering(self):
+        # staff_a is only assigned to session_1 (event_1). Manually requesting
+        # event_2's id in the URL should NOT surface event_2's registrations -
+        # the role-scoping happens before the filter is ever applied.
+        self.client.force_login(self.staff_a)
+        response = self.client.get(reverse("registrations:registration_list"), {"event": self.event_2.id})
+        self.assertEqual(response.context["total_count"], 0)
+
+    def test_pagination_limits_page_size(self):
+        # Create enough registrations to force a second page, using a small
+        # override so the test doesn't need to create hundreds of rows.
+        for i in range(5):
+            Registration.objects.create(
+                session=self.session_1, attendee_name=f"Extra {i}", attendee_email=f"extra{i}@example.com",
+                status=Registration.Status.RESERVED,
+            )
+        with self.settings(REGISTRATIONS_PAGE_SIZE=3):
+            self.client.force_login(self.organizer)
+            response = self.client.get(reverse("registrations:registration_list"))
+            self.assertEqual(len(response.context["page"]), 3)
+            self.assertEqual(response.context["total_count"], 8)  # 3 original + 5 extra
+            self.assertTrue(response.context["page"].has_other_pages())
+
+    def test_query_count_stays_flat_regardless_of_row_count(self):
+        # select_related should keep this at a small, fixed number of queries
+        # no matter how many registrations exist - proves we're not doing
+        # an extra query per row (the N+1 bug select_related prevents).
+        self.client.force_login(self.organizer)
+        with self.assertNumQueries(6):  # session query, count query, registrations query, events/sessions dropdowns
+            self.client.get(reverse("registrations:registration_list"))

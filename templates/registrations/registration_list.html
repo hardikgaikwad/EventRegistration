@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Registrations{% endblock %}
+{% block content %}
+<h1>Registrations</h1>
+<p class="text-muted">{{ total_count }} matching registration{{ total_count|pluralize }}</p>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-md-3">
+        <input type="text" name="q" value="{{ search_query }}" placeholder="Search name or email"
+               class="form-control">
+    </div>
+    <div class="col-md-3">
+        <select name="event" class="form-select">
+            <option value="">All events</option>
+            {% for event in visible_events %}
+                <option value="{{ event.id }}" {% if selected_event_id == event.id|stringformat:"s" %}selected{% endif %}>
+                    {{ event.name }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-3">
+        <select name="session" class="form-select">
+            <option value="">All sessions</option>
+            {% for session in visible_sessions %}
+                <option value="{{ session.id }}" {% if selected_session_id == session.id|stringformat:"s" %}selected{% endif %}>
+                    {{ session.title }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-2">
+        <select name="status" class="form-select">
+            <option value="">All statuses</option>
+            {% for value, label in status_choices %}
+                <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-1">
+        <button type="submit" class="btn btn-primary w-100">Go</button>
+    </div>
+</form>
+
+<table class="table table-bordered bg-white">
+    <thead><tr><th>Attendee</th><th>Email</th><th>Session</th><th>Event</th><th>Status</th><th>Reserved</th></tr></thead>
+    <tbody>
+    {% for registration in page %}
+        <tr>
+            <td>{{ registration.attendee_name }}</td>
+            <td>{{ registration.attendee_email }}</td>
+            <td><a href="{% url 'events:session_detail' registration.session.event_id registration.session_id %}">{{ registration.session.title }}</a></td>
+            <td>{{ registration.session.event.name }}</td>
+            <td>{{ registration.get_status_display }}</td>
+            <td>{{ registration.reserved_at }}</td>
+        </tr>
+    {% empty %}
+        <tr><td colspan="6" class="text-muted">No registrations match your filters.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+{% if page.has_other_pages %}
+<nav>
+    <ul class="pagination">
+        {% if page.has_previous %}
+            <li class="page-item"><a class="page-link" href="?page={{ page.previous_page_number }}&q={{ search_query }}&event={{ selected_event_id }}&session={{ selected_session_id }}&status={{ selected_status }}">Previous</a></li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">Page {{ page.number }} of {{ page.paginator.num_pages }}</span></li>
+        {% if page.has_next %}
+            <li class="page-item"><a class="page-link" href="?page={{ page.next_page_number }}&q={{ search_query }}&event={{ selected_event_id }}&session={{ selected_session_id }}&status={{ selected_status }}">Next</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

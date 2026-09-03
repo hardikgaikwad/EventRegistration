@@ -41,6 +41,8 @@ LOGOUT_REDIRECT_URL = "accounts:login"
 
 RESERVATION_HOLD_MINUTES = env.int("RESERVATION_HOLD_MINUTES", default=30)
 
+REGISTRATIONS_PAGE_SIZE = env.int("REGISTRATIONS_PAGE_SIZE")
+
 
 # Application definition
 
