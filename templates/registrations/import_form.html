@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Import Attendees{% endblock %}
+{% block content %}
+<h1>Import Attendees — {{ session.title }}</h1>
+<p class="text-muted">CSV file with columns: <code>name</code>, <code>email</code></p>
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <input type="file" name="csv_file" accept=".csv" class="form-control mb-3" required>
+    <button type="submit" class="btn btn-primary">Import</button>
+</form>
+{% endblock %}

@@ -63,8 +63,24 @@ Therefore, I chose Django's built-in session authentication instead of introduci
 ## Decision 3
 
 - **Chose:**
+Initially, I did not implement duplicate email validation, so attendees with the same email address could register multiple times.
+
 - **Rejected:**
+Duplicate email validation during the initial implementation.
+
 - **Why:**
+At first, I overlooked duplicate email validation as a core registration rule.
+
+### Later Reversed
+
+- **Chose:**
+Added duplicate email validation in the `reserve_seats()` service, which raises an error if an email address is already registered.
+
+- **Rejected:**
+Performing duplicate email validation only during CSV bulk import.
+
+- **Why:**
+I realized that duplicate email validation should be enforced across all registration methods, not just during CSV bulk imports. Since `reserve_seats()` is the central registration service, implementing the validation there ensures that every registration follows the same rule. Ideally, the database should also enforce email uniqueness as a final safeguard against duplicate records.
 
 ## Decision 4
 

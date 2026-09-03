@@ -1,8 +1,12 @@
 from datetime import timedelta
 
+import csv
+
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+from django.core.exceptions import ValidationError
+from django.core.validators import EmailValidator
 
 from events.models import Session
 from .models import Registration, RegistrationEvent
@@ -11,6 +15,9 @@ class TransitionError(Exception):
     pass
 
 class CapacityFullError(Exception):
+    pass
+
+class DuplicateRegistrationError(Exception):
     pass
 
 ALLOWED_TRANSITIONS = {
@@ -80,6 +87,16 @@ def reserve_seat(session, attendee_name, attendee_email, created_by=None):
         
         expire_stale_reservations(locked_session)
         
+        already_registered = locked_session.registrations.filter(
+            attendee_email__iexact=attendee_email
+        ).exclude(
+            status__in=[Registration.Status.CANCELLED, Registration.Status.EXPIRED]
+        ).exists()
+        if already_registered:
+            raise DuplicateRegistrationError(
+                f"'{attendee_email}' is already registered for this session."
+            )
+        
         seats_taken = compute_seats_taken(locked_session)
         if seats_taken >=locked_session.capacity:
             raise CapacityFullError(
@@ -103,3 +120,59 @@ def reserve_seat(session, attendee_name, attendee_email, created_by=None):
         )
         
         return registration
+    
+def import_registrations_from_csv(session, csv_file, created_by=None):
+    decoded_text = csv_file.read().decode("utf-8-sig")
+    reader = csv.DictReader(decoded_text.splitlines())
+    email_validator = EmailValidator()
+    
+    report = []
+    
+    for row_number, row in enumerate(reader, start=2):
+        name = (row.get("name") or "").strip()
+        email = (row.get("email") or "").strip()
+        
+        if not name or not email:
+            report.append({
+                "row_number": row_number, "name": name, "email": email,
+                "outcome": "rejected", "reason": "Missing name or email.",
+            })
+            continue
+        
+        try:
+            email_validator(email)
+        except ValidationError:
+            report.append({
+                "row_number": row_number, "name": name, "email": email,
+                "outcome": "rejected", "reason": "Invalid email format.",
+            })
+            continue
+        
+        try:
+            reserve_seat(session, attendee_name=name, attendee_email=email, created_by=created_by)
+            report.append({
+                "row_number": row_number, "name": name, "email": email,
+                "outcome": "created", "reason": None,
+            })
+        except DuplicateRegistrationError:
+            report.append({
+                "row_number": row_number, "name": name, "email": email,
+                "outcome": "duplicate", "reason": "Already registered for this session.",
+            })
+        except CapacityFullError as e:
+            report.append({
+                "row_number": row_number, "name": name, "email": email,
+                "outcome": "rejected", "reason": str(e),
+            })
+    
+    return report
+
+def build_session_roster_csv_rows(session):
+    yield ("Attendee Name", "Attendee Email", "Status", "Reserved At")
+    for registration in session.registrations.all().order_by("attendee_name"):
+        yield (
+            registration.attendee_name,
+            registration.attendee_email,
+            registration.get_status_display(),
+            registration.reserved_at.isoformat(),
+        )

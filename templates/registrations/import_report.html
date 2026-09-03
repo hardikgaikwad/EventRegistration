@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Import Report{% endblock %}
+{% block content %}
+<h1>Import Report — {{ session.title }}</h1>
+<p>Total rows processed: {{ report|length }}</p>
+<table class="table table-bordered bg-white">
+    <thead><tr><th>Row</th><th>Name</th><th>Email</th><th>Outcome</th><th>Reason</th></tr></thead>
+    <tbody>
+    {% for row in report %}
+        <tr>
+            <td>{{ row.row_number }}</td>
+            <td>{{ row.name }}</td>
+            <td>{{ row.email }}</td>
+            <td>
+                {% if row.outcome == "created" %}<span class="badge bg-success">Created</span>
+                {% elif row.outcome == "duplicate" %}<span class="badge bg-warning">Duplicate</span>
+                {% else %}<span class="badge bg-danger">Rejected</span>{% endif %}
+            </td>
+            <td>{{ row.reason|default:"" }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+<a href="{% url 'events:session_detail' session.event_id session.id %}" class="btn btn-primary">Back to session</a>
+{% endblock %}

@@ -1,9 +1,12 @@
+import csv
+
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.conf import settings
+from django.http import HttpResponse
 
 from events.models import Session, Event, StaffAssignment
 from events.permissions import require_session_access, user_is_organizer
@@ -11,7 +14,10 @@ from .forms import RegistrationForm
 from .models import Registration
 from .services import (
     CapacityFullError,
+    DuplicateRegistrationError,
     TransitionError,
+    build_session_roster_csv_rows,
+    import_registrations_from_csv,
     reserve_seat,
     transition,
 )
@@ -35,7 +41,7 @@ def registration_create(request, session_id):
                 )
                 messages.success(request, "Registration reserved.")
                 return redirect("events:session_detail", event_id=session.event_id, session_id=session.id)
-            except CapacityFullError as e:
+            except (CapacityFullError, DuplicateRegistrationError) as e:
                 messages.error(request, str(e))
                 
     else:
@@ -145,3 +151,34 @@ def registration_list(request):
         "selected_session_id": selected_session_id,
         "status_choices": Registration.Status.choices,
     })
+    
+@login_required
+def registration_import(request, session_id):
+    session = get_object_or_404(Session, pk=session_id)
+    require_session_access(request.user, session)
+    
+    if request.method == "POST":
+        csv_file = request.FILES.get("csv_file")
+        if not csv_file:
+            messages.error(request, "Please choose a CSV file to upload.")
+            return render(request, "registrations/import_form.html", {"session": session})
+        
+        report = import_registrations_from_csv(session, csv_file, created_by=request.user)
+        return render(request, "registrations/import_report.html", {"session": session, "report": report})
+    
+    return render(request, "registrations/import_form.html", {"session": session})
+
+@login_required
+def session_roster_csv(request, session_id):
+    session = get_object_or_404(Session, pk=session_id)
+    require_session_access(request.user, session)
+    
+    response = HttpResponse(content_type="text/csv")
+    safe_title = "".join(c if c.isalnum() or c in " -_" else "" for c in session.title)
+    response["Content-Disposition"] = f"attachment; filename='{safe_title}_roster.csv'"
+    
+    writer = csv.writer(response)
+    for row in build_session_roster_csv_rows(session):
+        writer.writerow(row)
+        
+    return response

@@ -5,12 +5,22 @@ from django.db import connection
 from django.urls import reverse
 from django.utils import timezone
 from django.core.management import call_command
-from events.models import StaffAssignment
+from django.core.files.uploadedfile import SimpleUploadedFile
 
+from events.models import StaffAssignment
 from accounts.models import User
 from events.models import Event, Session
 from .models import Registration, RegistrationEvent
-from .services import transition, TransitionError, reserve_seat, CapacityFullError, expire_stale_reservations
+from .services import (
+    CapacityFullError,
+    DuplicateRegistrationError,
+    TransitionError,
+    build_session_roster_csv_rows,
+    expire_stale_reservations,
+    import_registrations_from_csv,
+    reserve_seat,
+    transition,
+)
 
 # Create your tests here.
 
@@ -379,3 +389,100 @@ class RegistrationListTests(TestCase):
         self.client.force_login(self.organizer)
         with self.assertNumQueries(6):  # session query, count query, registrations query, events/sessions dropdowns
             self.client.get(reverse("registrations:registration_list"))
+            
+class CsvImportExportTests(TestCase):
+    def setUp(self):
+        event = Event.objects.create(
+            name="CSV Test Event", start_date="2026-01-01", end_date="2026-01-01", venue="Hall"
+        )
+        self.session = Session.objects.create(
+            event=event, title="CSV Session", start_time="2026-01-01T09:00:00Z",
+            duration_minutes=60, location="Room 1", capacity=10,
+        )
+
+    def make_csv(self, content):
+        return SimpleUploadedFile("attendees.csv", content.encode("utf-8"), content_type="text/csv")
+
+    def test_mixed_outcomes_report_correctly(self):
+        csv_content = (
+            "name,email\n"
+            "Alice Adams,alice@example.com\n"
+            "Bob Baker,bob@example.com\n"
+            ",missing-name@example.com\n"
+            "Carol Carter,not-an-email\n"
+            "Alice Adams,alice@example.com\n"
+        )
+        report = import_registrations_from_csv(self.session, self.make_csv(csv_content))
+
+        self.assertEqual(len(report), 5)
+        outcomes = [row["outcome"] for row in report]
+        self.assertEqual(outcomes, ["created", "created", "rejected", "rejected", "duplicate"])
+
+        # exactly the 2 valid, non-duplicate rows actually got created
+        self.assertEqual(Registration.objects.filter(session=self.session).count(), 2)
+
+    def test_valid_rows_survive_even_when_a_later_row_hits_capacity(self):
+        # capacity=2 session; 3 valid rows in one file - the 3rd should be
+        # rejected for capacity, but the first 2 must still be created,
+        # proving the import isn't wrapped in one all-or-nothing transaction.
+        small_session = Session.objects.create(
+            event=self.session.event, title="Small Session", start_time="2026-01-01T10:00:00Z",
+            duration_minutes=30, location="Room 2", capacity=2,
+        )
+        csv_content = (
+            "name,email\n"
+            "Alice Adams,alice@example.com\n"
+            "Bob Baker,bob@example.com\n"
+            "Carol Carter,carol@example.com\n"
+        )
+        report = import_registrations_from_csv(small_session, self.make_csv(csv_content))
+
+        self.assertEqual(report[0]["outcome"], "created")
+        self.assertEqual(report[1]["outcome"], "created")
+        self.assertEqual(report[2]["outcome"], "rejected")
+        self.assertIn("capacity", report[2]["reason"].lower())
+
+        self.assertEqual(Registration.objects.filter(session=small_session).count(), 2)
+
+    def test_import_handles_utf8_bom(self):
+        # Simulates a CSV exported from Excel, which often prepends a BOM.
+        csv_content = "\ufeffname,email\nDave Davis,dave@example.com\n"
+        report = import_registrations_from_csv(self.session, self.make_csv(csv_content))
+        self.assertEqual(report[0]["outcome"], "created")
+        self.assertEqual(report[0]["name"], "Dave Davis")
+
+    def test_export_includes_every_registration_with_current_status(self):
+        alice = reserve_seat(self.session, "Alice Adams", "alice@example.com")
+        transition(alice, Registration.Status.CONFIRMED)
+        reserve_seat(self.session, "Bob Baker", "bob@example.com")
+
+        rows = list(build_session_roster_csv_rows(self.session))
+
+        self.assertEqual(len(rows), 3)  # header + 2 registrations
+        self.assertEqual(rows[0], ("Attendee Name", "Attendee Email", "Status", "Reserved At"))
+        # sorted by attendee_name: Alice before Bob
+        self.assertEqual(rows[1][0], "Alice Adams")
+        self.assertEqual(rows[1][2], "Confirmed")
+        self.assertEqual(rows[2][0], "Bob Baker")
+        self.assertEqual(rows[2][2], "Reserved")
+
+    def test_import_view_requires_session_access(self):
+        staff_unassigned = User.objects.create_user(
+            email="unassigned3@example.com", password="pass12345", role=User.Role.STAFF
+        )
+        self.client.force_login(staff_unassigned)
+        csv_content = "name,email\nEve Evans,eve@example.com\n"
+        response = self.client.post(
+            reverse("registrations:registration_import", args=[self.session.id]),
+            {"csv_file": self.make_csv(csv_content)},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(Registration.objects.filter(attendee_email="eve@example.com").exists())
+
+    def test_export_view_requires_session_access(self):
+        staff_unassigned = User.objects.create_user(
+            email="unassigned4@example.com", password="pass12345", role=User.Role.STAFF
+        )
+        self.client.force_login(staff_unassigned)
+        response = self.client.get(reverse("registrations:session_roster_csv", args=[self.session.id]))
+        self.assertEqual(response.status_code, 403)

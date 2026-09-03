@@ -9,7 +9,7 @@ class Registration(models.Model):
     class Status(models.TextChoices):
         RESERVED = "reserved", "Reserved"
         CONFIRMED = "confirmed", "Confirmed"
-        CHECKED_IN = "checked_in", "Checked_in"
+        CHECKED_IN = "checked_in", "Checked in"
         EXPIRED = "expired", "Expired"
         CANCELLED = "cancelled", "Cancelled"
         
