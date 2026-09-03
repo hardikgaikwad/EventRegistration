@@ -15,12 +15,15 @@
 
         {% if user.is_authenticated %}
         <ul class="navbar-nav ms-auto align-items-center flex-row">
-            {% if user.role == "staff" %}
             <li class="nav-item me-3">
-                <a class="nav-link text-white" href="{% url 'events:staff_session_list' %}">My Sessions</a>
+                <a class="nav-link text-white" href="{% url 'events:event_list' %}">Events</a>
             </li>
             <li class="nav-item me-3">
                 <a class="nav-link text-white" href="{% url 'registrations:registration_list' %}">Registrations</a>
+            </li>
+            {% if user.role == "staff" %}
+            <li class="nav-item me-3">
+                <a class="nav-link text-white" href="{% url 'events:staff_session_list' %}">My Sessions</a>
             </li>
             {% endif %}
             <li class="nav-item me-3">

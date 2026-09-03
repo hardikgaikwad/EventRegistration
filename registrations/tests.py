@@ -466,11 +466,13 @@ class CsvImportExportTests(TestCase):
         self.assertEqual(rows[2][0], "Bob Baker")
         self.assertEqual(rows[2][2], "Reserved")
 
-    def test_import_view_requires_session_access(self):
-        staff_unassigned = User.objects.create_user(
-            email="unassigned3@example.com", password="pass12345", role=User.Role.STAFF
+    def test_import_requires_organizer_even_for_assigned_staff(self):
+        assigned_staff = User.objects.create_user(
+            email="assigned3@example.com", password="pass12345", role=User.Role.STAFF
         )
-        self.client.force_login(staff_unassigned)
+        StaffAssignment.objects.create(staff=assigned_staff, session=self.session)
+        self.client.force_login(assigned_staff)
+
         csv_content = "name,email\nEve Evans,eve@example.com\n"
         response = self.client.post(
             reverse("registrations:registration_import", args=[self.session.id]),
@@ -479,6 +481,19 @@ class CsvImportExportTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertFalse(Registration.objects.filter(attendee_email="eve@example.com").exists())
 
+    def test_import_succeeds_for_organizer(self):
+        organizer = User.objects.create_user(
+            email="importorganizer@example.com", password="pass12345", role=User.Role.ORGANIZER
+        )
+        self.client.force_login(organizer)
+        csv_content = "name,email\nFrank Foster,frank@example.com\n"
+        response = self.client.post(
+            reverse("registrations:registration_import", args=[self.session.id]),
+            {"csv_file": self.make_csv(csv_content)},
+        )
+        self.assertEqual(response.status_code, 200)  # renders the report page directly
+        self.assertTrue(Registration.objects.filter(attendee_email="frank@example.com").exists())
+
     def test_export_view_requires_session_access(self):
         staff_unassigned = User.objects.create_user(
             email="unassigned4@example.com", password="pass12345", role=User.Role.STAFF
@@ -486,3 +501,13 @@ class CsvImportExportTests(TestCase):
         self.client.force_login(staff_unassigned)
         response = self.client.get(reverse("registrations:session_roster_csv", args=[self.session.id]))
         self.assertEqual(response.status_code, 403)
+        
+    def test_export_succeeds_for_assigned_staff(self):
+        assigned_staff = User.objects.create_user(
+            email="assigned4@example.com", password="pass12345", role=User.Role.STAFF
+        )
+        StaffAssignment.objects.create(staff=assigned_staff, session=self.session)
+        self.client.force_login(assigned_staff)
+        response = self.client.get(reverse("registrations:session_roster_csv", args=[self.session.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv")

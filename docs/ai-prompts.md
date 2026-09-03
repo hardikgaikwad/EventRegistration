@@ -114,3 +114,19 @@ In this case, `LOGIN_URL`, `LOGIN_REDIRECT_URL`, and `LOGOUT_REDIRECT_URL` were 
 These follow the Django URL naming convention:
 
 `<app_name>:<url_name>`
+
+## <What you were trying to achieve>
+To build a CSV bulk import feature that allows a CSV file to be uploaded to a session and used to bulk import registrations. Each row should be processed independently, so a failure or rejection in one row should not prevent the remaining rows from being processed.
+
+Along with this, I wanted to build a CSV roster export feature that exports the current registrations of a session, including their statuses and other relevant details, into a CSV file.
+
+### Prompt
+Follow-up prompt to the master prompt to build the CSV bulk import feature under Phase 8 of `implementation_guide.md`.
+
+### What you got
+I got a working CSV bulk import and roster export feature. However, the bulk import feature was initially accessible to both staff and organizers for their respective assigned sessions, whereas the requirement was for the bulk import feature to be exclusive to organizers.
+
+### What you corrected
+I restricted the CSV bulk import feature to organizers only.
+
+The CSV roster export feature remains available to both staff and organizers, but users can only export the roster of sessions they are assigned to.

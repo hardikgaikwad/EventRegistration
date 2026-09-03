@@ -9,7 +9,7 @@ from django.conf import settings
 from django.http import HttpResponse
 
 from events.models import Session, Event, StaffAssignment
-from events.permissions import require_session_access, user_is_organizer
+from events.permissions import require_session_access, user_is_organizer, require_organizer
 from .forms import RegistrationForm
 from .models import Registration
 from .services import (
@@ -155,7 +155,7 @@ def registration_list(request):
 @login_required
 def registration_import(request, session_id):
     session = get_object_or_404(Session, pk=session_id)
-    require_session_access(request.user, session)
+    require_organizer(request.user)
     
     if request.method == "POST":
         csv_file = request.FILES.get("csv_file")

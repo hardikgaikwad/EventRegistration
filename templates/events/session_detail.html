@@ -8,7 +8,9 @@
 </p>
 
 <a href="{% url 'registrations:registration_create' session.id %}" class="btn btn-primary mb-3">Register Attendee</a>
+{% if user.role == "organizer" %}
 <a href="{% url 'registrations:registration_import' session.id %}" class="btn btn-outline-primary mb-3">Import CSV</a>
+{% endif %}
 <a href="{% url 'registrations:session_roster_csv' session.id %}" class="btn btn-outline-secondary mb-3">Export Roster CSV</a>
 
 <table class="table table-bordered bg-white">
