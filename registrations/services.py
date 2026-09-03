@@ -1,3 +1,6 @@
+from datetime import timedelta
+
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -56,9 +59,26 @@ def compute_seats_taken(session):
         ]
     ).count()
     
+def expire_stale_reservations(session):
+    cutoff = timezone.now() - timedelta(minutes=settings.RESERVATION_HOLD_MINUTES)
+    
+    stale_registrations = session.registrations.filter(
+        status=Registration.Status.RESERVED,
+        reserved_at__lt=cutoff,
+    )
+    
+    expired_count = 0
+    for registration in stale_registrations:
+        transition(registration, Registration.Status.EXPIRED, changed_by=None, note="Auto-expired: hold window elapsed.")
+        expired_count += 1
+    
+    return expired_count
+    
 def reserve_seat(session, attendee_name, attendee_email, created_by=None):
     with transaction.atomic():
         locked_session = Session.objects.select_for_update().get(pk=session.pk)
+        
+        expire_stale_reservations(locked_session)
         
         seats_taken = compute_seats_taken(locked_session)
         if seats_taken >=locked_session.capacity:

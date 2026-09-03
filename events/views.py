@@ -8,7 +8,7 @@ from .permissions import require_organizer, user_can_manage_session, require_ses
 from accounts.models import User
 
 from registrations.models import Registration
-from registrations.services import compute_seats_taken
+from registrations.services import compute_seats_taken, expire_stale_reservations
 from .permissions import require_organizer, require_session_access
 
 # Create your views here.
@@ -167,6 +167,8 @@ def session_detail(request, event_id, session_id):
     event = get_object_or_404(Event, pk=event_id)
     session = get_object_or_404(Session, pk=session_id, event=event)
     require_session_access(request.user, session)
+    
+    expire_stale_reservations(session)
     
     registrations = session.registrations.all().order_by("-reserved_at")
     seats_taken = compute_seats_taken(session)

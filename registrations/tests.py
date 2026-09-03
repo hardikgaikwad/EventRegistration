@@ -1,13 +1,16 @@
 import threading
-from django.test import TestCase, TransactionTestCase
+from datetime import timedelta
+from django.test import override_settings, TestCase, TransactionTestCase
 from django.db import connection
 from django.urls import reverse
+from django.utils import timezone
+from django.core.management import call_command
 from events.models import StaffAssignment
 
 from accounts.models import User
 from events.models import Event, Session
 from .models import Registration, RegistrationEvent
-from .services import transition, TransitionError, reserve_seat, CapacityFullError
+from .services import transition, TransitionError, reserve_seat, CapacityFullError, expire_stale_reservations
 
 # Create your tests here.
 
@@ -197,3 +200,58 @@ class RegistrationViewPermissionTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.registration.refresh_from_db()
         self.assertEqual(self.registration.status, Registration.Status.CONFIRMED)
+    
+class ExpiryTests(TestCase):
+    def setUp(self):
+        event = Event.objects.create(
+            name="Expiry Test Event", start_date="2026-01-01", end_date="2026-01-01", venue="Hall"
+        )
+        self.session = Session.objects.create(
+            event=event, title="Session", start_time="2026-01-01T09:00:00Z",
+            duration_minutes=60, location="Room 1", capacity=2,
+        )
+
+    def make_stale_reservation(self, minutes_old):
+        registration = Registration.objects.create(
+            session=self.session, attendee_name="Old Reservation", attendee_email="old@example.com",
+            status=Registration.Status.RESERVED,
+        )
+        stale_time = timezone.now() - timedelta(minutes=minutes_old)
+        Registration.objects.filter(pk=registration.pk).update(reserved_at=stale_time)
+        registration.refresh_from_db()
+        return registration
+
+    @override_settings(RESERVATION_HOLD_MINUTES=30)
+    def test_reservation_older_than_hold_window_is_expired(self):
+        stale = self.make_stale_reservation(minutes_old=31)
+        expired_count = expire_stale_reservations(self.session)
+        self.assertEqual(expired_count, 1)
+        stale.refresh_from_db()
+        self.assertEqual(stale.status, Registration.Status.EXPIRED)
+
+    @override_settings(RESERVATION_HOLD_MINUTES=30)
+    def test_reservation_within_hold_window_is_not_expired(self):
+        fresh = self.make_stale_reservation(minutes_old=10)
+        expired_count = expire_stale_reservations(self.session)
+        self.assertEqual(expired_count, 0)
+        fresh.refresh_from_db()
+        self.assertEqual(fresh.status, Registration.Status.RESERVED)
+
+    @override_settings(RESERVATION_HOLD_MINUTES=30)
+    def test_expiring_frees_a_seat_for_a_new_reservation(self):
+        self.make_stale_reservation(minutes_old=31)
+        reserve_seat(self.session, "Bob", "bob@example.com")  # capacity=2, 1 stale + this = fine
+        self.assertEqual(
+            Registration.objects.filter(session=self.session, status=Registration.Status.RESERVED).count(), 1
+        )
+        self.assertEqual(
+            Registration.objects.filter(session=self.session, status=Registration.Status.EXPIRED).count(), 1
+        )
+
+    @override_settings(RESERVATION_HOLD_MINUTES=30)
+    def test_expire_reservations_command_runs_and_expires_stale_ones(self):
+        self.make_stale_reservation(minutes_old=45)
+        call_command("expire_reservations")
+        self.assertEqual(
+            Registration.objects.filter(session=self.session, status=Registration.Status.EXPIRED).count(), 1
+        )
