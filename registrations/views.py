@@ -90,7 +90,7 @@ def registration_cancel(request, registration_id):
     if request.method == "POST":
         note = request.POST.get("note", "").strip() or None
         try:
-            transition(registration, Registration.Status.CANCELLED, changed_by=request.user)
+            transition(registration, Registration.Status.CANCELLED, changed_by=request.user, note=note)
             messages.success(request, f"{registration.attendee_name}'s registration cancelled.")
         except TransitionError as e:
             messages.error(request, str(e))
@@ -188,10 +188,13 @@ def session_roster_csv(request, session_id):
 
 @login_required
 def registration_timeline(request, registration_id):
-    registration = get_object_or_404(Registration, pk=registration_id)
+    registration = get_object_or_404(
+        Registration.objects.select_related("session__event")
+        , pk=registration_id
+    )
     require_session_access(request.user, registration.session)
     
-    events = registration.events.all().order_by("created_at")
+    events = registration.events.select_related("changed_by").order_by("created_at")
     
     return render(request, "registrations/registration_timeline.html", {
         "registration": registration,

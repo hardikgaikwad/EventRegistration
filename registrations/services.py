@@ -45,15 +45,15 @@ def clear_dismissed_alert_if_below_capacity(session):
     if compute_seats_taken(session) < session.capacity:
         DismissedAlert.objects.filter(session=session).delete()
 
-def transition(registration, new_status, changed_by=None, note=None):
-    old_status = registration.status
-    
-    if new_status not in ALLOWED_TRANSITIONS.get(old_status, set()):
-        raise TransitionError(
-            f"Cannot move a registration from '{old_status}' to '{new_status}'."
-        )
-        
+def transition(registration, new_status, changed_by=None, note=None):    
     with transaction.atomic():
+        registration = Registration.objects.select_for_update().get(pk=registration.pk)
+        old_status = registration.status
+            
+        if new_status not in ALLOWED_TRANSITIONS.get(old_status, set()):
+            raise TransitionError(
+                f"Cannot move a registration from '{old_status}' to '{new_status}'."
+            )
         registration.status = new_status
         registration.save(update_fields=["status", "updated_at"])
         

@@ -23,7 +23,7 @@ def dashboard_home(request):
     stats = get_dashboard_stats(request.user, chart_days=chart_days)
     
     first_series_status = CHART_SERIES[0][0]
-    chart_labels = [day.strftime("%b %b") for day, count in stats["events_by_status"][first_series_status]]
+    chart_labels = [day.strftime("%b %d") for day, count in stats["events_by_status"][first_series_status]]
     
     chart_datasets = []
     for status, label, color in CHART_SERIES:

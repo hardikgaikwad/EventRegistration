@@ -113,6 +113,9 @@ def session_delete(request, event_id, session_id):
     event = get_object_or_404(Event, pk=event_id)
     session = get_object_or_404(Session, pk=session_id, event=event)
     if request.method == "POST":
+        if session.registrations.exists():
+            messages.error(request, "Cannot delete a session that has registrations.")
+            return redirect("events:event_detail", event_id=event.id)
         session.delete()
         messages.success(request, f"Session '{session.title}' deleted.")
     return redirect("events:event_detail", event_id=event.id)
