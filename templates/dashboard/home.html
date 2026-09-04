@@ -1,10 +1,93 @@
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
+
 {% block content %}
 <h1>Dashboard</h1>
-{% if user.is_authenticated %}
-    <p>Signed in as {{ user.email }} ({{ user.get_role_display }}).</p>
-{% else %}
-    <p><a href="{% url 'accounts:login' %}">Log in</a> to continue.</p>
-{% endif %}
+<p class="text-muted">Signed in as {{ user.email }} ({{ user.get_role_display }}).</p>
+
+<div class="row mb-4">
+    <div class="col-md-3"><div class="card text-center p-3"><div class="fs-2">{{ sessions_today_count }}</div><div class="text-muted small">Sessions today</div></div></div>
+    <div class="col-md-3"><div class="card text-center p-3"><div class="fs-2">{{ checked_in_today_count }}</div><div class="text-muted small">Checked in today</div></div></div>
+    <div class="col-md-3"><div class="card text-center p-3"><div class="fs-2">{{ expired_this_week_count }}</div><div class="text-muted small">Expired this week</div></div></div>
+    <div class="col-md-3"><div class="card text-center p-3"><div class="fs-2">{{ sessions_at_capacity|length }}</div><div class="text-muted small">Sessions at capacity</div></div></div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <h3>Registrations by status</h3>
+        <table class="table table-bordered bg-white">
+            <tbody>
+            {% for row in status_breakdown %}
+                <tr><td>{{ row.status }}</td><td>{{ row.count }}</td></tr>
+            {% empty %}
+                <tr><td class="text-muted">No registrations yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="col-md-6">
+        <h3>Registrations by session</h3>
+        <table class="table table-bordered bg-white">
+            <tbody>
+            {% for row in session_breakdown %}
+                <tr><td>{{ row.session__title }}</td><td>{{ row.count }}</td></tr>
+            {% empty %}
+                <tr><td class="text-muted">No registrations yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<h3>Sessions at capacity</h3>
+<ul class="list-group mb-4">
+    {% for session in sessions_at_capacity %}
+        <li class="list-group-item">
+            <a href="{% url 'events:session_detail' session.event_id session.id %}">{{ session.title }}</a>
+            — {{ session.event.name }}
+        </li>
+    {% empty %}
+        <li class="list-group-item text-muted">None right now.</li>
+    {% endfor %}
+</ul>
+
+<div class="d-flex justify-content-between align-items-center">
+    <h3>Registration Activity</h3>
+    <div>
+        {% for option in chart_day_options %}
+            <a href="?days={{ option }}" class="btn btn-sm {% if chart_days == option %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                Last {{ option }} days
+            </a>
+        {% endfor %}
+    </div>
+</div>
+<canvas id="checkInsChart" height="80"></canvas>
+
+<script id="chart-data" type="application/json">
+    {{ chart_data_json|safe }}
+</script>
+{% endblock %}
+
+
+{% block extra_scripts %}
+<script>
+    const chartData = JSON.parse(document.getElementById('chart-data').textContent);
+    new Chart(document.getElementById('checkInsChart'), {
+        type: 'line',
+        data: {
+            labels: chartData.labels,
+            datasets: chartData.datasets.map(function(series) {
+                return {
+                    label: series.label,
+                    data: series.data,
+                    borderColor: series.borderColor,
+                    tension: 0.2,
+                };
+            }),
+        },
+        options: {
+            scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+        },
+    });
+</script>
 {% endblock %}
