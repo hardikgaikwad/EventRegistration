@@ -85,11 +85,32 @@ I realized that duplicate email validation should be enforced across all registr
 ## Decision 4
 
 - **Chose:**
+Block session deletion with an error message if any registrations reference the session.
+
 - **Rejected:**
+Cascade delete (which would silently destroy registration history)
 - **Why:**
+Goal 9 of the assignment requires immutable history. Cascading delete would destroy Registration rows and their linked RegistrationEvent audit trail. Blocking is safer and aligns with the "history you cannot rewrite" requirement.
 
 ## Decision 5
 
 - **Chose:**
+Session.objects.select_for_update().get() inside transaction.atomic in reserve_seat() and transition()
+
 - **Rejected:**
+Optimistic locking
+or simple count-then-insert pattern
+
 - **Why:**
+The assignment requires the system to be safe under concurrent requests. Without row-level locking, two simultaneous requests could both read the same seats_taken count before either inserts, leading to double booking. select_for_update serializes access to the session row.
+
+## Decision 6
+
+- **Chose:**
+Plain Django templates + Bootstrap 5 CDN, server-rendered HTML, no REST API, minimal JS
+
+- **Rejected:**
+Separate frontend SPA (React/Vue) + Django REST API
+
+- **Why:**
+I have experience building in Django and Django REST Framework, but little to no experience in frontend development. Server-rendered templates let me prioritize getting all ten goals working correctly first and defer UI polish, which aligns with the spec's explicit statement that "no REST API layer is required" and this is , in fact, a minimal Javascript application. Every goal can be fully achieved with plain Django templates — the dashboard chart uses Chart.js via CDN reading a JSON block rendered server-side.

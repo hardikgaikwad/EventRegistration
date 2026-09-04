@@ -7,7 +7,7 @@ Include at least one prompt that produced something wrong, and what you did abou
 If you did not use AI at all, say so here, and describe your process instead.
 
 ## <What you were trying to achieve>
-1. To create a comprehensive and reliable implementation plan covering the application's architecture, database schema, implementation details, and technology stack.
+To create a comprehensive and reliable implementation plan covering the application's architecture, database schema, implementation details, and technology stack.
 
 ### Prompt
 1. I am building an event registration system in Django. This is a web application meant to be hosted on Render with Postgres Supabase as the Database hosting platform. It is meant to have zero setup friction and every feature mentioned below is to be implemented correctly. Prioritize correctness and runnability and in turn polish.
@@ -88,16 +88,16 @@ All the modules are structurally formed such that each module helps me build a s
 
 
 ### What you got
-1. An implementation guide in Markdown format was generated and stored as `implementation_guide.md` in the `docs` directory.
+An implementation guide in Markdown format was generated and stored as `implementation_guide.md` in the `docs` directory.
 
 ### What you corrected
-1. Made multiple code changes throughout the entire coding phase of the project, as mentioned below.
+Made multiple code changes throughout the entire coding phase of the project, as mentioned below.
 
 ## <What you were trying to achieve>
 Build the initial `accounts` app in Django, starting with the creation of different apps such as `accounts`, `dashboard`, `events`, and `registrations`. In the `accounts` app, models such as `UserManager` and `User` were created. The goal was to build a basic application skeleton along with an initial roles and authentication system.
 
 ### Prompt
-Follow-up prompts based on the initial master prompt.
+2. Follow-up prompts based on the initial master prompt.
 
 ### What you got
 I got working code for the initial authentication system.
@@ -121,7 +121,7 @@ To build a CSV bulk import feature that allows a CSV file to be uploaded to a se
 Along with this, I wanted to build a CSV roster export feature that exports the current registrations of a session, including their statuses and other relevant details, into a CSV file.
 
 ### Prompt
-Follow-up prompt to the master prompt to build the CSV bulk import feature under Phase 8 of `implementation_guide.md`.
+3. Follow-up prompt to the master prompt to build the CSV bulk import feature under Phase 8 of `implementation_guide.md`.
 
 ### What you got
 I got a working CSV bulk import and roster export feature. However, the bulk import feature was initially accessible to both staff and organizers for their respective assigned sessions, whereas the requirement was for the bulk import feature to be exclusive to organizers.
@@ -130,3 +130,219 @@ I got a working CSV bulk import and roster export feature. However, the bulk imp
 I restricted the CSV bulk import feature to organizers only.
 
 The CSV roster export feature remains available to both staff and organizers, but users can only export the roster of sessions they are assigned to.
+
+## <What you were trying to achieve>
+To conduct a comprehensive review of the entire project codebase before deployment, identifying any bugs, security vulnerabilities, performance issues, configuration problems, or other necessary fixes that should be addressed to ensure the application is stable, secure, and production-ready.
+
+### Prompt
+4. Context
+
+This is a Django (5.2) event registration system, built incrementally over
+many sessions with an AI pair-programmer, now feature-complete against its
+original spec and about to be deployed to Render with a Supabase-hosted
+PostgreSQL database. Before deploying, I want a thorough, skeptical code
+review — not a rewrite, not a style pass. Assume the code works (it has
+passing tests and has been manually exercised extensively), and focus on:
+correctness bugs that tests might not catch, security gaps, performance
+problems, deployment risks, and genuine improvements.
+
+Please read through the actual codebase yourself rather than relying only on
+what's in this prompt — this document is context to help you look in the
+right places and know what "correct" is supposed to mean, not a substitute
+for reading the code.
+
+Tech stack
+
+- Django 5.2 (LTS), Python 3.14
+- PostgreSQL (Supabase-hosted in production; local Docker Postgres in dev)
+- Server-rendered Django templates + Bootstrap 5 (CDN) — no REST API layer,
+  no SPA framework
+- Chart.js (CDN) for one dashboard chart; otherwise no JavaScript beyond a
+  handful of small, essential inline scripts
+- WhiteNoise for static files, gunicorn for the production server
+- django-environ for settings, dj-database-url for parsing DATABASE_URL
+
+Project structure
+
+Four Django apps, each owning one domain:
+- `accounts` — custom User model (email login, `role`: organizer/staff)
+- `events` — Event, Session, StaffAssignment, and `permissions.py` (the
+  central authorization module)
+- `registrations` — Registration, RegistrationEvent, DismissedAlert, and
+  `services.py` (all business logic: the state machine, capacity-safe
+  reservation, expiry, CSV import/export, alert logic)
+- `dashboard` — read-only aggregated views/stats, no models of its own
+
+Every app with business logic follows the same pattern: a thin `views.py`
+that does permission checks and calls into `services.py`, which holds the
+actual logic and is unit-tested independently of any HTTP layer.
+
+Original requirements (all claimed complete except where noted)
+
+1. **Accounts/roles**: email+password login, organizer/staff roles, every
+   mutating view enforces role/assignment server-side (not just hiding UI).
+   **Forgot-password was deliberately NOT implemented** — no signup flow
+   exists, so there's no self-serve account to recover; this was a scoping
+   decision, not an oversight. Please don't flag this as missing unless you
+   see a concrete reason it's actually needed.
+2. **Events**: full CRUD, archive/restore (a flag, never a delete),
+   organizer-only.
+3. **Sessions**: full CRUD nested under events, organizer-only, capacity
+   field.
+4. **Registration lifecycle**: Reserved → Confirmed → Checked-in, with
+   Cancelled reachable from Reserved/Confirmed only (never from Checked-in).
+   All transitions go through one function (`transition()` in
+   `registrations/services.py`) backed by an explicit
+   `ALLOWED_TRANSITIONS` table. Capacity enforcement uses
+   `select_for_update()` inside `transaction.atomic()` to prevent
+   overbooking under concurrent requests — this was specifically validated
+   against real PostgreSQL with a multi-threaded `TransactionTestCase`
+   (SQLite silently no-ops `select_for_update`, so that test is meaningless
+   there). Stale reservations (default 30 min, `settings.RESERVATION_HOLD_MINUTES`)
+   expire via both a lazy check (on every capacity computation) and a
+   standalone `expire_reservations` management command, sharing one
+   function (`expire_stale_reservations`).
+5. **Assignment**: `StaffAssignment` join table, unique per (staff, session)
+   pair, organizer-only to create/remove.
+6. **Finding registrations**: one list view, role-scoped (organizer sees
+   all, staff sees only assigned-session registrations), with search
+   (name/email), filters (event/status/session), and pagination — all
+   claimed to be database-level, not Python-side filtering. There's a
+   `assertNumQueries` test pinning this view to a fixed query count
+   regardless of row count, specifically to catch N+1 regressions.
+7. **Bulk actions**: CSV import (per-row created/duplicate/rejected report,
+   valid rows survive invalid ones in the same file — deliberately NOT
+   wrapped in one transaction) and CSV roster export. Import is
+   organizer-only; export is available to organizer + assigned staff.
+   Duplicate-email detection lives in `reserve_seat()` itself (shared by
+   both the manual registration form and CSV import), scoped per-session,
+   excluding cancelled/expired registrations.
+8. **Dashboard**: role-scoped stats (sessions today, checked-in today,
+   expired this week, sessions at capacity, status breakdown, session
+   breakdown), plus a multi-line Chart.js chart (Reservations/
+   Confirmations/Check-ins per day) with a selectable 7/14/30-day range.
+9. **Immutable history**: `RegistrationEvent` is append-only. Django admin's
+   `has_add/change/delete_permission` are hardcoded to `False` on
+   `RegistrationEventAdmin`, regardless of user — including superusers.
+   There's a dedicated timeline view per registration.
+10. **At-capacity alerts**: `DismissedAlert` model. An alert is active iff
+    `seats_taken >= capacity AND no DismissedAlert row exists`. The
+    dismissal is deleted automatically the instant a session drops below
+    capacity (hooked into `transition()` itself, so it fires for both
+    manual cancellation and automated expiry) — meaning a session that
+    refills back to capacity later shows the alert again with zero manual
+    re-triggering. There's a nav badge (a context processor) showing a live
+    count.
+
+Known, deliberate design trade-offs — please don't flag these as bugs
+
+- Session delete is blocked if it has any registrations (or check whether
+  this was actually implemented — verify against `events/views.py`
+  `session_delete`, since this was a documented open decision at one point
+  and may not have been resolved consistently).
+- `RegistrationEvent` cannot be created outside `transition()`/`reserve_seat()`
+  — not even by an admin — by design. There is no manual "fix a bad audit
+  row" escape hatch.
+- `StaffAssignment.staff` has no DB-level constraint forcing `role=staff`
+  — an organizer could theoretically be assigned. This is a soft
+  constraint, enforced (if at all) only at the form/view layer — please
+  check whether it's actually enforced anywhere and flag if not.
+- The nav badge / dashboard "sessions at capacity" logic loops over
+  sessions in Python calling a per-session function, rather than a single
+  aggregated SQL query — a known, accepted trade-off for the expected
+  scale of this app (please sanity check whether this is actually fine, or
+  whether it's a bigger problem than assumed).
+- No per-event timezone support — one global `settings.TIME_ZONE` for the
+  whole app.
+- Email delivery isn't configured (no SMTP set up yet) — expected, since
+  forgot-password wasn't implemented; verify nothing else silently depends
+  on outbound email actually working.
+
+Specific things to scrutinize closely
+
+This codebase went through a lot of iterative debugging. Several bug
+*patterns* recurred multiple times during development — please specifically
+grep/search for other instances of these same patterns elsewhere in the
+codebase, since if it happened repeatedly by accident, it likely happened
+somewhere it hasn't been caught yet:
+
+1. **Template variable / context dict key mismatches.** At least twice, a
+   view passed a dict key that didn't exactly match the name used in
+   `{% for %}`/`{{ }}` in the corresponding template (e.g. singular vs.
+   plural), which fails completely silently — no error, just empty output.
+   Please check every `render()` call's context dict against the template
+   it renders for exact-name matches.
+2. **URL reversal args landing outside a `{% for %}` loop**, producing an
+   empty-string argument and a `NoReverseMatch`. Please check every
+   `{% url %}` call inside a table/list template is actually inside the
+   loop that defines the variables it references.
+3. **Settings read without proper type coercion** — `env(...)` instead of
+   `env.int(...)`/`env.bool(...)`/etc., which silently returns a string
+   where a real type is expected. Check every setting read via
+   `django-environ` in `config/settings.py` against how it's actually
+   *used* downstream.
+4. **Business logic accidentally bypassing `transition()`** — anywhere a
+   `Registration.status` might be set directly via `.save()` or a bulk
+   `.update()` outside of `registrations/services.py`, which would create a
+   status change with no corresponding `RegistrationEvent` audit row, or
+   bypass the legal-transition check entirely.
+5. **`select_for_update()` used outside an active transaction**, or,
+   conversely, capacity/duplicate/expiry checks that read data *without*
+   the lock, that should be inside the locked+atomic block in
+   `reserve_seat()`.
+6. **Permission checks (`require_organizer`, `require_session_access`)
+   missing from any mutating view**, or present but checking the wrong
+   session/event (e.g. one taken from the URL rather than the one actually
+   being acted on) — this was a real bug pattern earlier (e.g. a session
+   lookup not scoped to its parent event).
+
+What I'd like from the review
+
+Please give me, in order of severity:
+
+1. **Correctness bugs** — anything where the code doesn't do what it's
+   supposed to, especially around the concurrency safety, the transition
+   state machine, or permission enforcement.
+2. **Security gaps** — places where a determined user (especially a staff
+   account) could plausibly access, modify, or infer data they shouldn't,
+   via URL tampering, form tampering, or otherwise. Also check CSRF
+   coverage, and whether any view leaks another user's data through error
+   messages or timing.
+3. **Data integrity risks** — anything that could leave the database in an
+   inconsistent state (e.g. a `Registration` whose status doesn't match its
+   `RegistrationEvent` history, orphaned rows, etc.).
+4. **Performance issues** — N+1 queries, missing `select_related`/
+   `prefetch_related`, anything that would visibly degrade as data volume
+   grows beyond the current small seed-data scale.
+5. **Deployment readiness** — anything that would break or behave
+   differently once actually running on Render against Supabase rather
+   than local Docker Postgres (e.g. connection pooling behavior, SSL
+   settings, `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS`, static file handling,
+   `DEBUG` leaking in production, secret handling).
+6. **Test coverage gaps** — is there anything genuinely load-bearing (a
+   security check, a business rule) that has no test at all?
+7. **Anything else** you'd flag in a real pre-launch review, even if it
+   doesn't fit neatly into the above categories.
+
+For each issue: tell me the file and roughly where, explain the actual
+impact (not just "this is unusual"), and suggest a fix if it's not obvious.
+I'd rather have a shorter list of real, specific issues than a long list of
+stylistic nitpicks.
+
+### What you got
+I received a detailed analysis of the project codebase that identified major correctness bugs, security vulnerabilities, data integrity risks, and performance issues that could be improved. The report also highlighted critical deployment blockers that could cause significant problems if the application were deployed without addressing them.
+
+### What you corrected
+The report helped me identify and fix several correctness bugs, including typos, missing parameters, and forgotten authorization guards. It also highlighted important security gaps that were addressed, such as the lack of role-based scoping in `event_list` and `event_detail`, editing permissions being incorrectly enabled in `RegistrationAdmin`, and transition views accepting GET requests for state-changing operations.
+
+## <What you were trying to achieve>
+To unit test each functionality and feature implemented in the project before committing it to version control. The goal was to create functionality-specific tests, including relevant edge cases and failure scenarios, to thoroughly validate each feature.
+
+### Prompt
+5. Follow-up test prompts to the master prompt.
+
+### What you got
+I received individual, feature-specific and situation-specific test code blocks designed to thoroughly test each implemented functionality. These tests were executed together before deployment to verify that all features were functioning correctly and that the different applications worked together as expected.
+
+### What you corrected
+As features were modified and updated throughout the development of the application, the corresponding tests also had to be updated to reflect the latest implementation and expected behavior.
