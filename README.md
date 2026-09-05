@@ -1,4 +1,270 @@
-# Assignment 12 — Event Registration
+# EventSync
+
+A server-rendered event registration and check-in system built with Django.
+Organizers manage events, sessions, and staff assignments; staff run
+check-in for the sessions they're assigned to; both get a live dashboard,
+searchable registration history, CSV bulk tools, and automatic capacity
+alerts — all enforced server-side, not just hidden in the UI.
+
+Built with Django + PostgreSQL (Supabase), plain Django templates, and
+Bootstrap 5 — no separate frontend build, no REST API layer.
+
+---
+
+## Features
+
+### Accounts & roles
+- Email + password login (no separate username field)
+- Two roles: **Organizer** and **Staff**, enforced on every view server-side
+  — never just hidden buttons in a template
+- Staff can only act on sessions they're explicitly assigned to; organizers
+  can act on anything
+- *(Forgot-password intentionally not implemented — there's no self-serve
+  signup, so there's no account for a user to independently recover; an
+  organizer resets a password directly via the admin site.)*
+
+### Events
+- Create, edit, archive, and restore events (name, description, dates, venue)
+- Archiving hides an event from the default view without deleting its
+  sessions or registrations — it's a flag, never a delete
+
+### Sessions
+- Each session belongs to exactly one event: title, start time, duration,
+  location, and capacity
+- Full CRUD, organizer-only (staff can view but never create/edit/delete)
+
+### Staff assignment
+- Any number of staff can be assigned to a session; a staff member can be
+  assigned to any number of sessions across any event
+- Organizer-only to add or remove assignments
+- Each staff member has a dedicated "My Sessions" page
+
+### Registration lifecycle
+- **Reserved → Confirmed → Checked-in**, with **Cancelled** reachable from
+  Reserved or Confirmed only (never from Checked-in)
+- Every legal move is defined in one explicit transition table and enforced
+  through a single function — no scattered status-check `if` statements
+- **Capacity is enforced safely under concurrent requests** using row-level
+  locking (`SELECT ... FOR UPDATE`) inside a database transaction — verified
+  against real PostgreSQL with a multithreaded test, since SQLite silently
+  ignores row locks
+- Stale reservations (default 30-minute hold, configurable) automatically
+  expire — both via a scheduled management command and a lazy check applied
+  anywhere seat counts are computed, so the app self-corrects even without
+  the scheduled job running
+- Optional notes can be attached to any status change
+
+### Finding registrations
+- One searchable, filterable, paginated list across every registration a
+  user is allowed to see (all sessions for organizers, only assigned
+  sessions for staff)
+- Text search over attendee name and email, filters by event/session/status
+- Search, filtering, sorting, and pagination all happen as real database
+  queries — nothing is loaded into memory and filtered in Python
+
+### Bulk actions
+- **CSV import** of an attendee list into a session, with a per-row report:
+  created, duplicate, or rejected (with a reason) — valid rows are created
+  even when other rows in the same file fail
+- **CSV export** of a session's full roster, available to organizers and to
+  staff assigned to that session
+
+### Dashboard
+- Role-scoped: organizers see everything, staff see only their sessions
+- Sessions happening today, attendees checked in today, registrations
+  expired this week, sessions currently at capacity
+- Breakdown of registrations by status and by session
+- A multi-line chart (reservations / confirmations / check-ins per day)
+  with a selectable 7/14/30-day range
+
+### Immutable audit history
+- Every status change writes an append-only audit row — who changed it,
+  when, old status, new status, and any note
+- This history **cannot be edited or deleted through the app, including by
+  superusers** — enforced directly in Django admin's permission methods,
+  not just left as a convention
+- A full timeline view per registration
+
+### At-capacity alerts
+- A session that reaches full capacity surfaces as an alert, with a live
+  count badge and dropdown preview in the nav
+- Organizers can dismiss an alert; if the session later drops below
+  capacity and fills back up again, the alert reappears automatically —
+  no manual re-triggering required
+
+---
+
+## Tech stack
+
+| Layer | Choice |
+|---|---|
+| Backend | Django 5.2 (LTS), Python 3.12+ |
+| Database | PostgreSQL (Supabase in production; local Docker Postgres in dev) |
+| Frontend | Django templates, Bootstrap 5 (CDN) |
+| Charts | Chart.js (CDN) |
+| Static files | WhiteNoise |
+| Production server | gunicorn |
+| Config | django-environ, dj-database-url |
+
+No JavaScript framework, no separate API layer — everything renders
+server-side. The handful of places JavaScript appears at all (the dashboard
+chart, Bootstrap's own dropdown/collapse behavior) is the minimum needed for
+something a static page genuinely can't do.
+
+---
+
+## Project structure
+
+```
+eventsync/
+├── manage.py
+├── requirements.txt
+├── .env.example
+├── config/                # settings, root urls, wsgi/asgi
+├── accounts/               # custom User model, login/logout, roles
+├── events/                 # Event, Session, StaffAssignment, permissions.py
+├── registrations/          # Registration, RegistrationEvent, DismissedAlert,
+│                            # services.py (transitions, capacity, CSV, alerts)
+├── dashboard/               # role-scoped stats, chart, nav alert badge
+├── templates/                # shared base.html + per-app templates
+└── static/                    # custom CSS, logo/favicon assets
+```
+
+Each app with real business logic keeps a `services.py` holding the actual
+rules, independent of any view or HTTP request — `views.py` stays a thin
+layer that checks permissions and calls into it. This is what makes the
+core logic (the transition state machine, capacity locking, CSV import,
+alert state) directly unit-testable without spinning up a request at all.
+
+---
+
+## Getting started
+
+### 1. Clone and set up a virtual environment
+
+```bash
+git clone <your-repo-url>
+cd eventsync
+python -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\Activate.ps1
+```
+
+### 2. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Configure environment variables
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env`:
+- Leave `DATABASE_URL` empty to fall back to a local SQLite database (fastest
+  way to try the app), **or**
+- Point it at a PostgreSQL instance — a local Docker container for
+  development, or your Supabase connection string for anything beyond quick
+  local testing (SQLite silently skips the row-locking behavior the
+  concurrency-safety guarantees depend on, so it's not representative for
+  anything beyond basic smoke-testing)
+- Set a real `SECRET_KEY`
+
+### 4. Run migrations
+
+```bash
+python manage.py migrate
+```
+
+### 5. Create an organizer account
+
+```bash
+python manage.py createsuperuser
+```
+
+### 6. (Optional) Seed realistic demo data
+
+```bash
+python manage.py seed_demo_data
+```
+
+Creates a demo organizer/staff account (`organizer@example.com` /
+`staff@example.com`, password `demopass123`), several events and sessions
+with varied capacities, and registrations spread across the last 30 days
+and every possible status — including a couple of sessions deliberately
+left at capacity, one with a pre-dismissed alert, so every feature has
+something real to look at immediately.
+
+### 7. Run the server
+
+```bash
+python manage.py runserver
+```
+
+Visit `http://127.0.0.1:8000/` and log in.
+
+---
+
+## Running tests
+
+```bash
+python manage.py test
+```
+
+The suite covers, among other things: server-side role/assignment
+enforcement (a staff member gets a real 403 acting on a session they're
+not assigned to), capacity being refused once a session is full, illegal
+status transitions being rejected, a genuine multithreaded concurrency test
+against PostgreSQL, CSV import partial-success behavior, RegistrationEvent
+immutability (including against superusers via Django admin), and the
+self-healing alert-dismissal behavior.
+
+---
+
+## Deployment (Render + Supabase)
+
+1. **Supabase** — create a project, grab the pooled Postgres connection
+   string (Project Settings → Database → Connection Pooling).
+2. **Render** — create a Web Service pointed at this repo.
+   - Build command: `pip install -r requirements.txt && python manage.py collectstatic --noinput`
+   - Start command: `gunicorn config.wsgi`
+   - The included `Procfile`'s `release:` step runs migrations automatically
+     before each deploy goes live.
+   - Environment variables: `SECRET_KEY`, `DEBUG=False`,
+     `ALLOWED_HOSTS=<your-render-domain>`, `DATABASE_URL=<supabase pooled URL>`,
+     `DATABASE_SSL_REQUIRED=True`, `RESERVATION_HOLD_MINUTES=30`, plus SMTP
+     variables if email delivery is ever added later.
+
+---
+
+## Known limitations
+
+- **Forgot-password is not implemented.** There's no self-serve signup, so
+  there's no account a user could independently recover — an organizer
+  resets a password through Django admin instead. A deliberate scope
+  decision, not an oversight.
+- **`RegistrationEvent` cannot be created outside the app's own transition
+  logic — not even by an admin.** There's no manual "fix a bad audit row"
+  escape hatch; any correction has to happen through a real status
+  transition.
+- **`StaffAssignment.staff` has no hard database constraint requiring the
+  `staff` role** — this is enforced at the application layer, not the
+  schema level.
+- **No per-event timezone support** — one global `TIME_ZONE` setting
+  applies to the whole app.
+- **The nav alert badge and dashboard's "at capacity" stat reflect state as
+  of the last page load**, not real-time — there's no WebSocket/polling
+  layer, consistent with keeping this a plain server-rendered app.
+- **The alerts dropdown and nav badge loop over visible sessions in Python**
+  rather than a single aggregated query — a reasonable trade-off at the
+  scale this app is built for, worth revisiting if session counts grow
+  very large.
+
+
+# Assignment Specs
+
+## Assignment 12 — Event Registration
 
 ## The scenario
 
