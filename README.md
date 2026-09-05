@@ -9,6 +9,16 @@ alerts — all enforced server-side, not just hidden in the UI.
 Built with Django + PostgreSQL (Supabase), plain Django templates, and
 Bootstrap 5 — no separate frontend build, no REST API layer.
 
+**Live demo:** [https://eventsync-oj0g.onrender.com/](https://eventsync-oj0g.onrender.com/)
+
+| Role | Email | Password |
+|---|---|---|
+| Organizer | `organizer@example.com` | `demopass123` |
+| Staff | `staff@example.com` | `demopass123` |
+
+This is a seeded demo instance, not a production system — data may be reset
+or re-seeded periodically, and no real attendee information is involved.
+
 ---
 
 ## Features
@@ -119,15 +129,14 @@ something a static page genuinely can't do.
 eventsync/
 ├── manage.py
 ├── requirements.txt
-├── .env.example
-├── config/                # settings, root urls, wsgi/asgi
-├── accounts/               # custom User model, login/logout, roles
-├── events/                 # Event, Session, StaffAssignment, permissions.py
-├── registrations/          # Registration, RegistrationEvent, DismissedAlert,
+├── .env
+├── config/                  # settings, root urls, wsgi/asgi
+├── accounts/                # custom User model, login/logout, roles
+├── events/                  # Event, Session, StaffAssignment, permissions.py
+├── registrations/           # Registration, RegistrationEvent, DismissedAlert,
 │                            # services.py (transitions, capacity, CSV, alerts)
 ├── dashboard/               # role-scoped stats, chart, nav alert badge
-├── templates/                # shared base.html + per-app templates
-└── static/                    # custom CSS, logo/favicon assets
+└── templates                # shared base.html + per-app templates
 ```
 
 Each app with real business logic keeps a `services.py` holding the actual
